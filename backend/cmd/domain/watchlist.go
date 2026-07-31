@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type PrivacyLevel string
@@ -88,4 +90,14 @@ type Collaborator struct {
 	User           User            `json:"user" gorm:"foreignKey:UserID"`
 	MovieWatchlist *MovieWatchlist `json:"movie_watch_list,omitempty" gorm:"foreignKey:MovieWatchlistID;constraint:OnDelete:CASCADE"`
 	ShowWatchlist  *ShowWatchlist  `json:"show_watchlist,omitempty" gorm:"foreignKey:ShowWatchlistID;constraint:OnDelete:CASCADE"`
+}
+
+func (c *Collaborator) BeforeSave(tx *gorm.DB) error {
+	movieSet := c.MovieWatchlistID != nil
+	showSet := c.ShowWatchlistID != nil
+
+	if movieSet == showSet {
+		return fmt.Errorf("exactly one of MovieWatchlistID or ShowWatchlistID must be set for collaborator %s", c.ID)
+	}
+	return nil
 }
