@@ -18,7 +18,7 @@ type User struct {
 	Username        string     `json:"username" gorm:"uniqueIndex;not null"`
 	Email           string     `json:"email" gorm:"uniqueIndex;not null"`
 	PasswordHash    string     `json:"-" gorm:"not null"`
-	IsEmailVerified bool       `json:"isEmailVerified" gorm:"default:false;not null"`
+	IsEmailVerified bool       `json:"is_email_verified" gorm:"default:false;not null"`
 	Role            UserRole   `json:"role" gorm:"type:varchar(20);default:'user';not null"`
 	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
 

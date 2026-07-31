@@ -81,14 +81,14 @@ type ShowWatchlistItem struct {
 type Collaborator struct {
 	BaseUUID
 	UserID           uuid.UUID        `json:"user_id" gorm:"type:uuid;not null;index"`
-	MovieWatchlistID *uuid.UUID       `json:"movie_watch_list_id,omitempty" gorm:"type:uuid;index"`
+	MovieWatchlistID *uuid.UUID       `json:"movie_watchlist_id,omitempty" gorm:"type:uuid;index"`
 	ShowWatchlistID  *uuid.UUID       `json:"show_watchlist_id,omitempty" gorm:"type:uuid;index"`
 	Role             CollaboratorRole `json:"role" gorm:"type:varchar(20);default:'editor';not null"`
 	JoinedAt         time.Time        `json:"joined_at"`
 
 	// Relationships
 	User           User            `json:"user" gorm:"foreignKey:UserID"`
-	MovieWatchlist *MovieWatchlist `json:"movie_watch_list,omitempty" gorm:"foreignKey:MovieWatchlistID;constraint:OnDelete:CASCADE"`
+	MovieWatchlist *MovieWatchlist `json:"movie_watchlist,omitempty" gorm:"foreignKey:MovieWatchlistID;constraint:OnDelete:CASCADE"`
 	ShowWatchlist  *ShowWatchlist  `json:"show_watchlist,omitempty" gorm:"foreignKey:ShowWatchlistID;constraint:OnDelete:CASCADE"`
 }
 
