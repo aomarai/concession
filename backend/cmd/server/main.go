@@ -55,7 +55,7 @@ func initDB() (*gorm.DB, error) {
 		&domain.WatchlistItem{},
 		&domain.Collaborator{},
 		&domain.UserWatchProgress{},
-		&domain.RefreshToken{},
+		&domain.Session{},
 		&domain.Notification{},
 	)
 	if err != nil {
@@ -65,6 +65,21 @@ func initDB() (*gorm.DB, error) {
 }
 
 func main() {
+	var slogHandler slog.Handler
+
+	if os.Getenv("ENV") == "prod" {
+		slogHandler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	} else {
+		slogHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+	}
+
+	logger := slog.New(slogHandler)
+	slog.SetDefault(logger)
+
 	db, err := initDB()
 	if err != nil {
 		slog.Error("Failed to initialize database", "error", err)
