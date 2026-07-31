@@ -7,7 +7,7 @@ import (
 
 type ctxKey string
 
-const loggerKey ctxKey = "slog_logger"
+const loggerKey ctxKey = "logger"
 
 // WithLogger puts a customized logger into context
 func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
