@@ -18,12 +18,12 @@ type OAuthAccount struct {
 	User User `json:"user" gorm:"foreignKey:UserID"`
 }
 
-type RefreshToken struct {
+type Session struct {
 	BaseUUID
 	UserID    uuid.UUID `json:"user_id" gorm:"type:uuid;not null;index"`
 	TokenHash string    `json:"-" gorm:"not null;index"`
 	UserAgent string    `json:"user_agent"`
-	IPAddress string    `json:"'ip_address'"`
+	IPAddress string    `json:"ip_address"`
 	ExpiresAt time.Time `json:"expires_at" gorm:"not null;index"`
 	Revoked   bool      `json:"revoked" gorm:"default:false"`
 
