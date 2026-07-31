@@ -27,11 +27,10 @@ type User struct {
 	AvatarURL   string `json:"avatar_url" gorm:"index"`
 
 	// Relationships
-	Reviews         []Review            `json:"reviews,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-	MovieWatchlists []MovieWatchlist    `json:"movie_watchlists,omitempty" gorm:"foreignKey:OwnerID;constraint:OnDelete:CASCADE"`
-	ShowWatchlists  []ShowWatchlist     `json:"show_watchlists,omitempty" gorm:"foreignKey:OwnerID;constraint:OnDelete:CASCADE"`
-	Collaborations  []Collaborator      `json:"collaborations,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-	WatchProgress   []UserWatchProgress `json:"watch_progress,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	Reviews        []Review            `json:"reviews,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	Watchlists     []Watchlist         `json:"watchlists,omitempty" gorm:"foreignKey:OwnerID;constraint:OnDelete:CASCADE"`
+	Collaborations []Collaborator      `json:"collaborations,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	WatchProgress  []UserWatchProgress `json:"watch_progress,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 }
 
 type WatchStatus string

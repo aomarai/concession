@@ -8,14 +8,21 @@ import (
 	"gorm.io/gorm"
 )
 
+type ReviewableItem string
+
+const (
+	ReviewableMovies ReviewableItem = "movie"
+	ReviewableShows  ReviewableItem = "show"
+)
+
 type Review struct {
 	BaseUUID
-	UserID         uuid.UUID `json:"user_id" gorm:"type:uuid;not null;index"`
-	Rating         uint8     `json:"rating" gorm:"not null"` // e.g. 1-10 or 1-5
-	Title          string    `json:"title"`
-	Content        string    `json:"content"`
-	ReviewableID   uint64    `json:"reviewable_id" gorm:"not null;index"`
-	ReviewableType string    `json:"reviewable_type" gorm:"not null;index"` // e.g. "movies" or "shows"
+	UserID         uuid.UUID      `json:"user_id" gorm:"type:uuid;not null;index"`
+	Rating         uint8          `json:"rating" gorm:"not null"` // e.g. 1-10 or 1-5
+	Title          string         `json:"title"`
+	Content        string         `json:"content"`
+	ReviewableID   uint64         `json:"reviewable_id" gorm:"not null;index"`
+	ReviewableType ReviewableItem `json:"reviewable_type" gorm:"varchar(20);default:'movie';not null;index"` // e.g. "movies" or "shows"
 
 	// Relationships
 	User User `json:"user" gorm:"foreignKey:UserID"`
