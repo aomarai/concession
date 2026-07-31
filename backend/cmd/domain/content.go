@@ -18,7 +18,7 @@ type Review struct {
 	ReviewableType string    `json:"reviewable_type" gorm:"not null;index"` // e.g. "movies" or "shows"
 
 	// Relationships
-	User User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	User User `json:"user" gorm:"foreignKey:UserID"`
 }
 
 type Movie struct {
