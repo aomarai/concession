@@ -9,16 +9,13 @@ import (
 )
 
 type Review struct {
-	ID             uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	UserID         uuid.UUID      `json:"user_id" gorm:"type:uuid;not null;index"`
-	Rating         uint8          `json:"rating" gorm:"not null"` // e.g. 1-10 or 1-5
-	Title          string         `json:"title"`
-	Content        string         `json:"content"`
-	ReviewableID   uint64         `json:"reviewable_id" gorm:"not null;index"`
-	ReviewableType string         `json:"reviewable_type" gorm:"not null;index"` // e.g. "movies" or "shows"
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt `json:"deleted_at" gorm:"index"`
+	BaseUUID
+	UserID         uuid.UUID `json:"user_id" gorm:"type:uuid;not null;index"`
+	Rating         uint8     `json:"rating" gorm:"not null"` // e.g. 1-10 or 1-5
+	Title          string    `json:"title"`
+	Content        string    `json:"content"`
+	ReviewableID   uint64    `json:"reviewable_id" gorm:"not null;index"`
+	ReviewableType string    `json:"reviewable_type" gorm:"not null;index"` // e.g. "movies" or "shows"
 
 	// Relationships
 	User User `json:"user,omitempty" gorm:"foreignKey:UserID"`
