@@ -31,6 +31,7 @@ type User struct {
 	Watchlists     []Watchlist         `json:"watchlists,omitempty" gorm:"foreignKey:OwnerID;constraint:OnDelete:CASCADE"`
 	Collaborations []Collaborator      `json:"collaborations,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 	WatchProgress  []UserWatchProgress `json:"watch_progress,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	OAuthAccounts  []OAuthAccount      `json:"oauth_accounts,omitempty"`
 }
 
 type WatchStatus string
