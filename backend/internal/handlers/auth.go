@@ -109,7 +109,6 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		err := Body.Close()
 		if err != nil {
 			logger.Error("failed to close body", "error", err)
-			http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		}
 	}(resp.Body)
 
@@ -199,7 +198,13 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 			logger.Error("failed to revoke session", "error", revokeErr)
 		}
 	}
+	clearSessionCookie(w)
+	w.WriteHeader(http.StatusOK)
+}
 
+// clearSessionCookie clears an invalid/expired session cookie to avoid repeated errors
+// and to keep auth behavior predictable.
+func clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_token",
 		Value:    "",
@@ -209,6 +214,4 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
-
-	w.WriteHeader(http.StatusOK)
 }

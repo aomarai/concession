@@ -19,6 +19,7 @@ func (h *AuthHandler) AuthenticateMiddleware(next http.Handler) http.Handler {
 		cookie, err := r.Cookie("session_token")
 		if err != nil {
 			logger.Warn("missing session cookie")
+			clearSessionCookie(w) // Clear existing/stale session cookie to avoid repeated 401s
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -26,6 +27,7 @@ func (h *AuthHandler) AuthenticateMiddleware(next http.Handler) http.Handler {
 		session, err := auth.ValidateSession(r.Context(), h.DB, cookie.Value)
 		if err != nil {
 			logger.Warn("invalid session", "error", err)
+			clearSessionCookie(w)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
