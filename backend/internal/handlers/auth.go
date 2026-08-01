@@ -78,7 +78,7 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "oauth_state", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Name: "oauth_state", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true,
 	})
 
 	code := r.URL.Query().Get("code")
