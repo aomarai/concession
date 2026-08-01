@@ -10,34 +10,30 @@ import (
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
+	"github.com/aomarai/concession/internal/logging"
 	"github.com/sethvargo/go-envconfig"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func initDB(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 
-	dbDriver := cfg.DBDriver // "postgres" or default "sqlite"
-	if dbDriver == "postgres" {
+	if cfg.DBDriver == "postgres" {
 		slog.Info("Initializing database", "database", "PostgreSQL")
 		dsn := fmt.Sprintf(
 			"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-			cfg.DBHost,
-			cfg.DBUser,
-			cfg.DBPassword,
-			cfg.DBName,
-			cfg.DBPort,
+			cfg.DBHost, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBPort,
 		)
 		dialector = postgres.Open(dsn)
 	} else {
-		// Default to SQLite for dev
 		slog.Info("Initializing database", "database", "SQLite")
 		dbURI := cfg.DBPath
 		if dbURI == "" {
 			dbURI = "concession.db"
 		}
-		dialector = postgres.Open(dbURI)
+		dialector = sqlite.Open(dbURI)
 	}
 
 	db, err := gorm.Open(dialector, &gorm.Config{})
@@ -72,18 +68,15 @@ func main() {
 
 	ctx := context.Background()
 	cfg := config.GetInstance()
-	if err := envconfig.Process(ctx, &cfg); err != nil {
+	if err := envconfig.Process(ctx, cfg); err != nil {
 		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	if cfg.Environment == "prod" {
-		slogHandler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
-		})
+		slogHandler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
 	} else {
-		slogHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})
+		slogHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
 	}
 
 	logger := slog.New(slogHandler)
@@ -92,26 +85,32 @@ func main() {
 	db, err := initDB(cfg)
 	if err != nil {
 		slog.Error("Failed to initialize database", "error", err)
+		os.Exit(1)
 	}
 
-	jwtSecret := cfg.JWTSecret
-	if jwtSecret == "" {
-		slog.Warn("JWT_SECRET environment variable not set")
-	}
+	authHandler := handlers.NewAuthHandler(db)
+	userHandler := handlers.NewUserHandler(db)
 
-	// Set up auth handler with GORM connection
-	authHandler := handlers.NewAuthHandler(db, jwtSecret)
-
-	// Set up HTTP routes
 	mux := http.NewServeMux()
+	mux.Handle("/api/v1/me", authHandler.AuthenticateMiddleware(http.HandlerFunc(userHandler.HandleGetMe)))
 	mux.HandleFunc("/api/v1/auth/google/login", authHandler.HandleGoogleLogin)
-	//mux.HandleFunc("/api/v1/auth/google/callback", authHandler.HandleGoogleCallback) # TODO: implement HandleGoogleCallback
+	mux.HandleFunc("/api/v1/auth/google/callback", authHandler.HandleGoogleCallback)
+	mux.HandleFunc("/api/v1/auth/logout", authHandler.HandleLogout)
 
-	// Start HTTP server
+	// Example of a protected route:
+	// mux.Handle("/api/v1/me", authHandler.AuthenticateMiddleware(http.HandlerFunc(someHandler)))
+
+	var rootHandler http.Handler = mux
+	rootHandler = logging.RequestLoggerMiddleware(logger)(rootHandler) // logging wraps everything
+
 	port := cfg.Port
 	if port == "" {
 		port = "8080"
 	}
 
 	slog.Info("HTTP server starting", "port", port)
+	if err := http.ListenAndServe(":"+port, rootHandler); err != nil {
+		slog.Error("HTTP server stopped", "error", err)
+		os.Exit(1)
+	}
 }
