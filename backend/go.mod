@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/joho/godotenv v1.5.1
 	github.com/sethvargo/go-envconfig v1.4.3
 	golang.org/x/oauth2 v0.36.0
 	gorm.io/datatypes v1.2.7

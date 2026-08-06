@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -19,11 +18,12 @@ import (
 )
 
 type AuthHandler struct {
-	DB *gorm.DB
+	DB  *gorm.DB
+	cfg *config.Config
 }
 
-func NewAuthHandler(db *gorm.DB) *AuthHandler {
-	return &AuthHandler{DB: db}
+func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
+	return &AuthHandler{DB: db, cfg: cfg}
 }
 
 func generateRandomToken() (string, error) {
@@ -49,12 +49,12 @@ func (h *AuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) 
 		Value:    state,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(10 * time.Minute),
 	})
 
-	cfg := config.GetGoogleOAuthConfig()
+	cfg := config.GetGoogleOAuthConfig(h.cfg)
 	url := cfg.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
@@ -71,15 +71,9 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 	logger := logging.FromContext(r.Context())
 
 	// 1. Verify state to prevent CSRF
-	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
-		logger.Warn("oauth state mismatch or missing")
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+	if !validateState(w, r) {
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: "oauth_state", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true,
-	})
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
@@ -89,8 +83,8 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 	}
 
 	// 2. Exchange code for a Google access token
-	cfg := config.GetGoogleOAuthConfig()
-	token, err := cfg.Exchange(r.Context(), code)
+	cfg := config.GetGoogleOAuthConfig(h.cfg)
+	token, err := cfg.Exchange(r.Context(), code) // 👈 Save the returned token
 	if err != nil {
 		logger.Error("oauth code exchange failed", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
@@ -98,23 +92,8 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 	}
 
 	// 3. Fetch the user's Google profile
-	client := cfg.Client(r.Context(), token)
-	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	info, err := fetchGoogleUserInfo(r.Context(), cfg, token) // 👈 Pass token here
 	if err != nil {
-		logger.Error("failed to fetch google userinfo", "error", err)
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
-		return
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			logger.Error("failed to close body", "error", err)
-		}
-	}(resp.Body)
-
-	var info googleUserInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		logger.Error("failed to decode google userinfo", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -135,16 +114,7 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_token",
-		Value:    rawToken,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(30 * 24 * time.Hour),
-	})
-
+	setSessionCookie(w, rawToken)
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
@@ -165,7 +135,7 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, info googleUserInfo)
 		return nil, err
 	}
 
-	// No linked account yet — create user (or attach to an existing one by email later if you want that flow)
+	// No linked account yet, create user
 	user := domain.User{
 		Username:        info.Email,
 		Email:           info.Email,
@@ -213,5 +183,58 @@ func clearSessionCookie(w http.ResponseWriter) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func validateState(w http.ResponseWriter, r *http.Request) bool {
+	ctxLogger := logging.FromContext(r.Context())
+	stateCookie, err := r.Cookie("oauth_state")
+	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
+		ctxLogger.Warn("oauth state mismatch or missing")
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return false
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+	return true
+}
+
+func fetchGoogleUserInfo(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token) (googleUserInfo, error) {
+	ctxLogger := logging.FromContext(ctx)
+	client := cfg.Client(ctx, token)
+
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		ctxLogger.Error("failed to fetch google userinfo", "error", err)
+		return googleUserInfo{}, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			ctxLogger.Error("failed to close body", "error", err)
+		}
+	}()
+
+	var info googleUserInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		ctxLogger.Error("failed to decode google userinfo", "error", err)
+		return googleUserInfo{}, err
+	}
+	return info, nil
+}
+
+func setSessionCookie(w http.ResponseWriter, rawToken string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    rawToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Now().Add(30 * 24 * time.Hour),
 	})
 }

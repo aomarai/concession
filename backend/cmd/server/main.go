@@ -67,7 +67,12 @@ func main() {
 	var slogHandler slog.Handler
 
 	ctx := context.Background()
-	cfg := config.GetInstance()
+	cfg, err := config.Load(ctx)
+	if err != nil {
+		slog.Error("Could not load configuration")
+		os.Exit(1)
+	}
+
 	if err := envconfig.Process(ctx, cfg); err != nil {
 		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
@@ -84,11 +89,11 @@ func main() {
 
 	db, err := initDB(cfg)
 	if err != nil {
-		slog.Error("Failed to initialize database", "error", err)
+		logger.Error("Failed to initialize database", "error", err)
 		os.Exit(1)
 	}
 
-	authHandler := handlers.NewAuthHandler(db)
+	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
 
 	mux := http.NewServeMux()
@@ -108,9 +113,9 @@ func main() {
 		port = "8080"
 	}
 
-	slog.Info("HTTP server starting", "port", port)
+	logger.Info("HTTP server starting", "port", port)
 	if err := http.ListenAndServe(":"+port, rootHandler); err != nil {
-		slog.Error("HTTP server stopped", "error", err)
+		logger.Error("HTTP server stopped", "error", err)
 		os.Exit(1)
 	}
 }
