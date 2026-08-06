@@ -8,14 +8,14 @@ import (
 )
 
 type Config struct {
-	DBDriver           string `env:"DB_DRIVER"`
+	DBDriver           string `env:"DB_DRIVER,default=sqlite"`
 	DBHost             string `env:"DB_HOST"`
 	DBUser             string `env:"DB_USER"`
 	DBPassword         string `env:"DB_PASSWORD"`
 	DBName             string `env:"DB_NAME"`
 	DBPort             string `env:"DB_PORT"`
 	DBPath             string `env:"DB_PATH"`
-	Environment        string `env:"ENV"`
+	Environment        string `env:"ENV,default=development"`
 	JWTSecret          string `env:"JWT_SECRET"`
 	Port               string `env:"PORT"`
 	CookieSecure       bool   `env:"COOKIE_SECURE,default=true"`
