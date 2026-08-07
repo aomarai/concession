@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type UserRole string
@@ -42,6 +44,31 @@ const (
 	StatusCompleted   WatchStatus = "completed"
 	StatusDropped     WatchStatus = "dropped"
 )
+
+// DeleteUserCascade soft-deletes a user along with their Reviews,
+// Watchlists, Collaborations, and WatchProgress, in a single transaction.
+// See DeleteSeasonCascade/DeleteShowCascade in content_cascade.go for the
+// general reasoning: BaseUUID's soft delete means a plain db.Delete(&User{})
+// won't cascade on its own (no real DELETE ever happens for GORM to hook
+// an ON DELETE CASCADE constraint off of), so each related table needs its
+// own explicit soft-delete here.
+func DeleteUserCascade(ctx context.Context, db *gorm.DB, userID uuid.UUID) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&Review{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("owner_id = ?", userID).Delete(&Watchlist{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&Collaborator{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&UserWatchProgress{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&User{}, userID).Error
+	})
+}
 
 type ItemType string
 
