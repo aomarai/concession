@@ -1,9 +1,13 @@
 package domain
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type PrivacyLevel string
@@ -72,4 +76,64 @@ type Collaborator struct {
 	// Relationships
 	User      User      `json:"user" gorm:"foreignKey:UserID"`
 	Watchlist Watchlist `json:"watchlist" gorm:"foreignKey:WatchlistID;constraint:OnDelete:CASCADE"`
+}
+
+// DeleteWatchlistCascade soft-deletes a watchlist along with its Items and
+// Collaborators, in a single transaction. Same reasoning as
+// DeleteSeasonCascade/DeleteShowCascade/DeleteUserCascade: Watchlist soft
+// deletes (via BaseUUID), so a plain db.Delete(&Watchlist{}) is an UPDATE,
+// not a DELETE — the `constraint:OnDelete:CASCADE` tags on
+// Watchlist.Items/Collaborators never get a real DELETE to fire on.
+func DeleteWatchlistCascade(ctx context.Context, db *gorm.DB, watchlistID uuid.UUID) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return deleteWatchlistCascadeTx(tx, watchlistID)
+	})
+}
+
+// deleteWatchlistCascadeTx does the actual work within an existing
+// transaction, so DeleteUserCascade can reuse it for each watchlist a
+// deleted user owns without opening a nested transaction.
+func deleteWatchlistCascadeTx(tx *gorm.DB, watchlistID uuid.UUID) error {
+	if err := tx.Where("watchlist_id = ?", watchlistID).Delete(&WatchlistItem{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("watchlist_id = ?", watchlistID).Delete(&Collaborator{}).Error; err != nil {
+		return err
+	}
+	return tx.Delete(&Watchlist{}, watchlistID).Error
+}
+
+// BeforeCreate ensures every Watchlist gets a unique ShareToken.
+// ShareToken has a `uniqueIndex` tag but nothing was generating a value for
+// it — two Watchlists created without one set explicitly would both insert
+// an empty string and collide on that index (an empty string satisfies
+// NOT NULL, so unlike an actual NULL it isn't exempt from the unique
+// constraint).
+//
+// IMPORTANT: BaseUUID already defines a BeforeCreate hook (for ID
+// generation). Go only promotes a method from an embedded type when the
+// outer type doesn't define one of the same name itself — defining
+// BeforeCreate directly on Watchlist means GORM calls THIS method instead
+// of BaseUUID's, full stop, not both. So this explicitly calls
+// w.BaseUUID.BeforeCreate(tx) first to keep ID generation working.
+func (w *Watchlist) BeforeCreate(tx *gorm.DB) error {
+	if err := w.BaseUUID.BeforeCreate(tx); err != nil {
+		return err
+	}
+	if w.ShareToken == "" {
+		token, err := generateShareToken()
+		if err != nil {
+			return err
+		}
+		w.ShareToken = token
+	}
+	return nil
+}
+
+func generateShareToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

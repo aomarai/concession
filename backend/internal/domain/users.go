@@ -46,23 +46,40 @@ const (
 )
 
 // DeleteUserCascade soft-deletes a user along with their Reviews,
-// Watchlists, Collaborations, and WatchProgress, in a single transaction.
-// See DeleteSeasonCascade/DeleteShowCascade in content_cascade.go for the
-// general reasoning: BaseUUID's soft delete means a plain db.Delete(&User{})
-// won't cascade on its own (no real DELETE ever happens for GORM to hook
-// an ON DELETE CASCADE constraint off of), so each related table needs its
-// own explicit soft-delete here.
+// Watchlists (and each watchlist's own Items/Collaborators), Collaborations
+// on other users' watchlists, and WatchProgress, in a single transaction.
+//
+// NOTE: OAuthAccounts is deliberately NOT included — User.OAuthAccounts is
+// the only one of User's relationships without `constraint:OnDelete:CASCADE`
+// in its gorm tag, so this only cascades what's actually declared as
+// cascading. Flag if that's an oversight rather than intentional.
 func DeleteUserCascade(ctx context.Context, db *gorm.DB, userID uuid.UUID) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&Review{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("owner_id = ?", userID).Delete(&Watchlist{}).Error; err != nil {
+
+		// Each watchlist this user owns needs its Items/Collaborators
+		// cascaded too, not just the Watchlist row itself — otherwise
+		// items and other collaborators are left dangling under a
+		// soft-deleted watchlist.
+		var ownedWatchlistIDs []uuid.UUID
+		if err := tx.Model(&Watchlist{}).Where("owner_id = ?", userID).Pluck("id", &ownedWatchlistIDs).Error; err != nil {
 			return err
 		}
+		for _, watchlistID := range ownedWatchlistIDs {
+			if err := deleteWatchlistCascadeTx(tx, watchlistID); err != nil {
+				return err
+			}
+		}
+
+		// This user's own membership as a collaborator on *other* people's
+		// watchlists (distinct from the loop above, which only touched
+		// watchlists this user owns).
 		if err := tx.Where("user_id = ?", userID).Delete(&Collaborator{}).Error; err != nil {
 			return err
 		}
+
 		if err := tx.Where("user_id = ?", userID).Delete(&UserWatchProgress{}).Error; err != nil {
 			return err
 		}
