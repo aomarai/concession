@@ -24,7 +24,7 @@ import (
 func setupUserTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(uniqueSQLiteDSN(t)), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
@@ -283,3 +283,11 @@ func TestUserWatchProgressFieldsRoundTrip(t *testing.T) {
 		t.Errorf("expected WatchedAt %v, got %v", progress.WatchedAt, fetched.WatchedAt)
 	}
 }
+
+// Note: there's deliberately no test here calling plain db.Delete(&user)
+// and expecting Reviews/Watchlists/etc. to cascade. Since User soft-deletes
+// (BaseUUID's DeletedAt), a plain Delete is an UPDATE, not a DELETE, so the
+// `constraint:OnDelete:CASCADE` tags on User's relationships never actually
+// fire — same situation as Season. The correct way to delete a user is
+// DeleteUserCascade (user_cascade.go), which is fully tested in
+// user_cascade_test.go.

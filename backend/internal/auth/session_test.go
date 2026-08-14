@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +19,14 @@ import (
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	// A unique-per-test DSN, not a hardcoded "file::memory:?cache=shared".
+	// SQLite's shared-cache mode keys the in-memory DB by name; an
+	// unnamed/empty name means EVERY connection opened with that DSN
+	// across the whole test binary shares the same database, not just
+	// connections within one test. cache=shared is still needed so a
+	// single test's own connection pool sees consistent data.
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open in-memory sqlite db: %v", err)
 	}

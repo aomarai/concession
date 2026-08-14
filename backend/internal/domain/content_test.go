@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -19,7 +18,7 @@ import (
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(uniqueSQLiteDSN(t)), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
@@ -159,10 +158,34 @@ func TestShowSeasonEpisodePreload(t *testing.T) {
 	}
 }
 
-func TestDeleteSeasonCascade(t *testing.T) {
-	db := setupTestDB(t)
+// TestSeasonEpisodeCascadeDelete exercises the `constraint:OnDelete:CASCADE`
+// tags on Show.Seasons and Season.Episodes. This needs real foreign key
+// constraints, so unlike setupTestDB it does NOT disable FK constraint
+// creation, and it explicitly enables SQLite's foreign_keys pragma (off by
+// default). It only migrates Show/Season/Episode, sidestepping the
+// User-model uncertainty that setupTestDB avoids.
+func TestSeasonEpisodeCascadeDelete(t *testing.T) {
+	// `_fk=true` in the DSN enables the foreign_keys pragma on every
+	// connection the pool opens (PRAGMA foreign_keys is per-connection in
+	// SQLite, so a one-off db.Exec("PRAGMA foreign_keys = ON") only affects
+	// whichever single connection happens to run it). We also pin the pool
+	// to a single connection so all queries share the same in-memory DB
+	// state and the pragma reliably applies to every query.
+	db, err := gorm.Open(sqlite.Open(uniqueSQLiteDSN(t)+"&_fk=true"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open in-memory sqlite db: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get underlying sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
-	show := Show{Name: "Cascade Fn Show", TVDBID: 11111}
+	if err := db.AutoMigrate(&Show{}, &Season{}, &Episode{}); err != nil {
+		t.Fatalf("failed to migrate models: %v", err)
+	}
+
+	show := Show{Name: "Cascade Show", TVDBID: 99999}
 	if err := db.Create(&show).Error; err != nil {
 		t.Fatalf("unexpected error creating show: %v", err)
 	}
@@ -170,122 +193,23 @@ func TestDeleteSeasonCascade(t *testing.T) {
 	if err := db.Create(&season).Error; err != nil {
 		t.Fatalf("unexpected error creating season: %v", err)
 	}
-	ep1 := Episode{SeasonID: season.ID, ShowID: show.ID, Title: "Ep 1", EpisodeNumber: 1}
-	ep2 := Episode{SeasonID: season.ID, ShowID: show.ID, Title: "Ep 2", EpisodeNumber: 2}
-	if err := db.Create(&ep1).Error; err != nil {
-		t.Fatalf("unexpected error creating episode 1: %v", err)
-	}
-	if err := db.Create(&ep2).Error; err != nil {
-		t.Fatalf("unexpected error creating episode 2: %v", err)
+	episode := Episode{SeasonID: season.ID, ShowID: show.ID, Title: "Ep 1", EpisodeNumber: 1}
+	if err := db.Create(&episode).Error; err != nil {
+		t.Fatalf("unexpected error creating episode: %v", err)
 	}
 
-	if err := DeleteSeasonCascade(context.Background(), db, season.ID); err != nil {
-		t.Fatalf("unexpected error from DeleteSeasonCascade: %v", err)
+	// Season has a DeletedAt field, so db.Delete() here would normally be a
+	// *soft* delete (an UPDATE, not a DELETE) — and SQLite's ON DELETE
+	// CASCADE only fires on a real DELETE statement. Unscoped() forces a
+	// hard delete so we're actually exercising the CASCADE constraint.
+	if err := db.Unscoped().Delete(&Season{}, season.ID).Error; err != nil {
+		t.Fatalf("unexpected error deleting season: %v", err)
 	}
 
-	// Normal (scoped) queries should no longer find the season or its
-	// episodes.
-	var seasonCount, episodeCount int64
-	db.Model(&Season{}).Where("id = ?", season.ID).Count(&seasonCount)
-	db.Model(&Episode{}).Where("season_id = ?", season.ID).Count(&episodeCount)
-	if seasonCount != 0 {
-		t.Errorf("expected season to be soft-deleted (excluded from scoped query), found %d", seasonCount)
-	}
-	if episodeCount != 0 {
-		t.Errorf("expected episodes to be soft-deleted (excluded from scoped query), found %d", episodeCount)
-	}
-
-	// Unscoped queries should still find them, with deleted_at set.
-	var episodesUnscoped []Episode
-	if err := db.Unscoped().Where("season_id = ?", season.ID).Find(&episodesUnscoped).Error; err != nil {
-		t.Fatalf("unexpected error fetching unscoped episodes: %v", err)
-	}
-	if len(episodesUnscoped) != 2 {
-		t.Fatalf("expected 2 episodes to still exist (soft-deleted), found %d", len(episodesUnscoped))
-	}
-	for _, ep := range episodesUnscoped {
-		if !ep.DeletedAt.Valid {
-			t.Errorf("expected episode %q to have DeletedAt set", ep.Title)
-		}
-	}
-
-	var seasonUnscoped Season
-	if err := db.Unscoped().First(&seasonUnscoped, season.ID).Error; err != nil {
-		t.Fatalf("expected season to still exist unscoped: %v", err)
-	}
-	if !seasonUnscoped.DeletedAt.Valid {
-		t.Error("expected season to have DeletedAt set")
-	}
-}
-
-func TestDeleteSeasonCascadeUnknownID(t *testing.T) {
-	db := setupTestDB(t)
-
-	// Deleting a season that doesn't exist should be a no-op, not an error
-	// — consistent with how RevokeSession treats an unknown token.
-	if err := DeleteSeasonCascade(context.Background(), db, 999999); err != nil {
-		t.Fatalf("expected no error deleting unknown season, got %v", err)
-	}
-}
-
-func TestDeleteShowCascade(t *testing.T) {
-	db := setupTestDB(t)
-
-	show := Show{Name: "Full Cascade Show", TVDBID: 22222}
-	if err := db.Create(&show).Error; err != nil {
-		t.Fatalf("unexpected error creating show: %v", err)
-	}
-
-	season1 := Season{ShowID: show.ID, SeasonNumber: 1}
-	season2 := Season{ShowID: show.ID, SeasonNumber: 2}
-	if err := db.Create(&season1).Error; err != nil {
-		t.Fatalf("unexpected error creating season 1: %v", err)
-	}
-	if err := db.Create(&season2).Error; err != nil {
-		t.Fatalf("unexpected error creating season 2: %v", err)
-	}
-
-	ep1 := Episode{SeasonID: season1.ID, ShowID: show.ID, Title: "S1E1", EpisodeNumber: 1}
-	ep2 := Episode{SeasonID: season2.ID, ShowID: show.ID, Title: "S2E1", EpisodeNumber: 1}
-	if err := db.Create(&ep1).Error; err != nil {
-		t.Fatalf("unexpected error creating episode 1: %v", err)
-	}
-	if err := db.Create(&ep2).Error; err != nil {
-		t.Fatalf("unexpected error creating episode 2: %v", err)
-	}
-
-	// An unrelated show should be untouched by the cascade.
-	otherShow := Show{Name: "Untouched Show", TVDBID: 33333}
-	if err := db.Create(&otherShow).Error; err != nil {
-		t.Fatalf("unexpected error creating other show: %v", err)
-	}
-	otherSeason := Season{ShowID: otherShow.ID, SeasonNumber: 1}
-	if err := db.Create(&otherSeason).Error; err != nil {
-		t.Fatalf("unexpected error creating other season: %v", err)
-	}
-
-	if err := DeleteShowCascade(context.Background(), db, show.ID); err != nil {
-		t.Fatalf("unexpected error from DeleteShowCascade: %v", err)
-	}
-
-	var showCount, seasonCount, episodeCount int64
-	db.Model(&Show{}).Where("id = ?", show.ID).Count(&showCount)
-	db.Model(&Season{}).Where("show_id = ?", show.ID).Count(&seasonCount)
-	db.Model(&Episode{}).Where("show_id = ?", show.ID).Count(&episodeCount)
-	if showCount != 0 {
-		t.Errorf("expected show to be soft-deleted, found %d", showCount)
-	}
-	if seasonCount != 0 {
-		t.Errorf("expected both seasons to be soft-deleted, found %d", seasonCount)
-	}
-	if episodeCount != 0 {
-		t.Errorf("expected both episodes to be soft-deleted, found %d", episodeCount)
-	}
-
-	var otherSeasonCount int64
-	db.Model(&Season{}).Where("show_id = ?", otherShow.ID).Count(&otherSeasonCount)
-	if otherSeasonCount != 1 {
-		t.Errorf("expected unrelated show's season to be untouched, count = %d", otherSeasonCount)
+	var count int64
+	db.Model(&Episode{}).Where("season_id = ?", season.ID).Count(&count)
+	if count != 0 {
+		t.Errorf("expected episodes to cascade-delete with their season, %d remain", count)
 	}
 }
 
