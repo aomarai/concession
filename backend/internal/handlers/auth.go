@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/aomarai/concession/internal/auth"
 	"github.com/aomarai/concession/internal/config"
@@ -48,14 +47,16 @@ func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 		return
 	}
 
+	cookieCfg := h.cfg.OAuthStateCookie()
 	cookie := &http.Cookie{
-		Name:     "oauth_state",
+		Name:     cookieCfg.Name,
 		Value:    state,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.cfg.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(10 * time.Minute),
+		Path:     cookieCfg.Path,
+		HttpOnly: cookieCfg.HTTPOnly,
+		Secure:   cookieCfg.Secure,
+		SameSite: cookieCfg.SameSite,
+		MaxAge:   int(cookieCfg.MaxAge.Seconds()),
+		Domain:   cookieCfg.Domain,
 	}
 	c.Header("Set-Cookie", cookie.String())
 
@@ -65,18 +66,18 @@ func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 }
 
 type googleUserInfo struct {
-	ID            string `json:"id"`
-	Email         string `json:"email"`
-	VerifiedEmail bool   `json:"verified_email"`
-	Name          string `json:"name"`
-	Picture       string `json:"picture"`
+	ID            string 
+	Email         string 
+	VerifiedEmail bool   
+	Name          string 
+	Picture       string 
 }
 
 func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 	logger := logging.FromContext(c.Request.Context())
 
 	// 1. Verify state to prevent CSRF
-	if !validateState(c) {
+	if !validateState(c, h.cfg) {
 		return
 	}
 
@@ -89,7 +90,7 @@ func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 
 	// 2. Exchange code for a Google access token
 	cfg := config.GetGoogleOAuthConfig(h.cfg)
-	token, err := cfg.Exchange(c.Request.Context(), code) // 👈 Save the returned token
+	token, err := cfg.Exchange(c.Request.Context(), code)
 	if err != nil {
 		logger.Error("oauth code exchange failed", "error", err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
@@ -126,7 +127,7 @@ func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 func (h *AuthHandler) HandleLogout(c *gin.Context) {
 	logger := logging.FromContext(c.Request.Context())
 
-	cookie, err := c.Cookie("session_token")
+	cookie, err := c.Cookie(h.cfg.SessionCookieName)
 	if err == nil {
 		if revokeErr := auth.RevokeSession(c.Request.Context(), h.DB, cookie); revokeErr != nil {
 			logger.Error("failed to revoke session", "error", revokeErr)
@@ -148,15 +149,17 @@ func setSessionCookie(c *gin.Context, cfg *config.Config, rawToken string) {
 	c.Header("Set-Cookie", cookie.String())
 }
 
-func validateState(c *gin.Context) bool {
+func validateState(c *gin.Context, cfg *config.Config) bool {
 	ctxLogger := logging.FromContext(c.Request.Context())
-	stateCookie, err := c.Cookie("oauth_state")
+	stateCookie, err := c.Cookie(cfg.OAuthStateCookieName)
 	if err != nil || c.Query("state") != stateCookie {
 		ctxLogger.Warn("oauth state mismatch or missing")
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return false
 	}
-	c.Header("Set-Cookie", "oauth_state=; Max-Age=0; Path=/; HttpOnly")
+	// Clear oauth_state cookie while preserving original attributes
+	clearedOAuthStateCookie := auth.NewClearedOAuthStateCookie(cfg)
+	c.Header("Set-Cookie", clearedOAuthStateCookie.String())
 	return true
 }
 

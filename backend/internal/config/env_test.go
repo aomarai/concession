@@ -9,7 +9,10 @@ import (
 // allConfigEnvKeys lists every env var Config reads.
 var allConfigEnvKeys = []string{
 	"DB_DRIVER", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT",
-	"DB_PATH", "ENV", "JWT_SECRET", "PORT", "COOKIE_SECURE",
+	"DB_PATH", "ENV", "JWT_SECRET", "PORT",
+	"COOKIE_SECURE", "COOKIE_HTTP_ONLY", "COOKIE_SAME_SITE", "COOKIE_PATH", "COOKIE_DOMAIN",
+	"SESSION_COOKIE_NAME", "SESSION_COOKIE_MAX_AGE",
+	"OAUTH_STATE_COOKIE_NAME", "OAUTH_STATE_COOKIE_PATH",
 	"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URL",
 }
 
@@ -17,13 +20,13 @@ var allConfigEnvKeys = []string{
 // whatever was there once the test finishes.
 //
 // This uses os.Unsetenv rather than t.Setenv("KEY", "") deliberately:
-// envconfig's `default=...` tag only applies when a variable is completely
+// envconfig's  tag only applies when a variable is completely
 // absent (os.LookupEnv returns false), not when it's present-but-empty. A
 // t.Setenv("KEY", "") would count as "set" and suppress the default, which
 // would break the "defaults apply" tests below.
 //
 // Caveat: Load() calls godotenv.Load(), which reads a ".env" file from the
-// current working directory (which `go test` sets to this package's own
+// current working directory (which  sets to this package's own
 // directory, internal/config) and only fills in variables that AREN'T
 // already present in the OS environment. So: values set via t.Setenv in a
 // test always win (they're already "present" before Load() runs), but if
@@ -65,6 +68,18 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if !cfg.CookieSecure {
 		t.Error("expected CookieSecure to default to true")
 	}
+	if !cfg.CookieHTTPOnly {
+		t.Error("expected CookieHTTPOnly to default to true")
+	}
+	if cfg.CookiePath != "/" {
+		t.Errorf("expected CookiePath default %q, got %q", "/", cfg.CookiePath)
+	}
+	if cfg.SessionCookieName != "session_token" {
+		t.Errorf("expected SessionCookieName default %q, got %q", "session_token", cfg.SessionCookieName)
+	}
+	if cfg.OAuthStateCookieName != "oauth_state" {
+		t.Errorf("expected OAuthStateCookieName default %q, got %q", "oauth_state", cfg.OAuthStateCookieName)
+	}
 }
 
 func TestLoadFieldsWithoutDefaultsAreEmpty(t *testing.T) {
@@ -76,14 +91,15 @@ func TestLoadFieldsWithoutDefaultsAreEmpty(t *testing.T) {
 	}
 
 	fields := map[string]string{
-		"DBHost":             cfg.DBHost,
-		"DBUser":             cfg.DBUser,
-		"DBPassword":         cfg.DBPassword,
-		"DBName":             cfg.DBName,
-		"DBPort":             cfg.DBPort,
-		"DBPath":             cfg.DBPath,
-		"JWTSecret":          cfg.JWTSecret,
-		"Port":               cfg.Port,
+		"DBHost":         cfg.DBHost,
+		"DBUser":         cfg.DBUser,
+		"DBPassword":     cfg.DBPassword,
+		"DBName":         cfg.DBName,
+		"DBPort":         cfg.DBPort,
+		"DBPath":         cfg.DBPath,
+		"JWTSecret":      cfg.JWTSecret,
+		"Port":           cfg.Port,
+		"CookieDomain":   cfg.CookieDomain,
 		"GoogleClientID":     cfg.GoogleClientID,
 		"GoogleClientSecret": cfg.GoogleClientSecret,
 		"GoogleRedirectURL":  cfg.GoogleRedirectURL,
@@ -108,6 +124,14 @@ func TestLoadReadsEnvVars(t *testing.T) {
 	t.Setenv("JWT_SECRET", "top-secret")
 	t.Setenv("PORT", "8080")
 	t.Setenv("COOKIE_SECURE", "false")
+	t.Setenv("COOKIE_HTTP_ONLY", "false")
+	t.Setenv("COOKIE_SAME_SITE", "Strict")
+	t.Setenv("COOKIE_PATH", "/app")
+	t.Setenv("COOKIE_DOMAIN", ".example.com")
+	t.Setenv("SESSION_COOKIE_NAME", "my_session")
+	t.Setenv("SESSION_COOKIE_MAX_AGE", "3600")
+	t.Setenv("OAUTH_STATE_COOKIE_NAME", "my_oauth_state")
+	t.Setenv("OAUTH_STATE_COOKIE_PATH", "/auth")
 	t.Setenv("GOOGLE_CLIENT_ID", "client-id")
 	t.Setenv("GOOGLE_CLIENT_SECRET", "client-secret")
 	t.Setenv("GOOGLE_REDIRECT_URL", "https://example.com/callback")
@@ -131,6 +155,10 @@ func TestLoadReadsEnvVars(t *testing.T) {
 		{"Environment", cfg.Environment, "production"},
 		{"JWTSecret", cfg.JWTSecret, "top-secret"},
 		{"Port", cfg.Port, "8080"},
+		{"CookieDomain", cfg.CookieDomain, ".example.com"},
+		{"SessionCookieName", cfg.SessionCookieName, "my_session"},
+		{"OAuthStateCookieName", cfg.OAuthStateCookieName, "my_oauth_state"},
+		{"OAuthStateCookiePath", cfg.OAuthStateCookiePath, "/auth"},
 		{"GoogleClientID", cfg.GoogleClientID, "client-id"},
 		{"GoogleClientSecret", cfg.GoogleClientSecret, "client-secret"},
 		{"GoogleRedirectURL", cfg.GoogleRedirectURL, "https://example.com/callback"},
@@ -142,6 +170,18 @@ func TestLoadReadsEnvVars(t *testing.T) {
 	}
 	if cfg.CookieSecure {
 		t.Error("expected CookieSecure to be false when COOKIE_SECURE=false")
+	}
+	if cfg.CookieHTTPOnly {
+		t.Error("expected CookieHTTPOnly to be false when COOKIE_HTTP_ONLY=false")
+	}
+	if cfg.CookieSameSite != "Strict" {
+		t.Errorf("expected CookieSameSite to be %q, got %q", "Strict", cfg.CookieSameSite)
+	}
+	if cfg.CookiePath != "/app" {
+		t.Errorf("expected CookiePath to be %q, got %q", "/app", cfg.CookiePath)
+	}
+	if cfg.SessionCookieMaxAge != 3600 {
+		t.Errorf("expected SessionCookieMaxAge to be %d, got %d", 3600, cfg.SessionCookieMaxAge)
 	}
 }
 

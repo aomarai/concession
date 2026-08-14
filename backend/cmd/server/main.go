@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
@@ -124,13 +125,17 @@ func main() {
 		Handler: engine,
 	}
 
-	// Graceful shutdown
+	// Graceful shutdown: use Shutdown() so in-flight requests can complete
+	// before the server exits, reducing client-visible errors on deployment.
 	go func() {
 		<-ctx.Done()
 		logger.Info("shutting down server")
-		if err := server.Close(); err != nil {
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Error("server shutdown error", "error", err)
-			os.Exit(1)
 		}
 	}()
 

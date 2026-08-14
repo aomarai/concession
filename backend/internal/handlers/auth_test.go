@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
-
 	"github.com/aomarai/concession/internal/auth"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
@@ -40,10 +38,17 @@ func setupAuthHandlerTestDB(t *testing.T) *gorm.DB {
 
 func newTestConfig(cookieSecure bool) *config.Config {
 	return &config.Config{
-		GoogleClientID:     "test-client-id",
-		GoogleClientSecret: "test-client-secret",
-		GoogleRedirectURL:  "https://app.example.com/auth/google/callback",
-		CookieSecure:       cookieSecure,
+		GoogleClientID:       "test-client-id",
+		GoogleClientSecret:   "test-client-secret",
+		GoogleRedirectURL:    "https://app.example.com/auth/google/callback",
+		CookieSecure:         cookieSecure,
+		CookieHTTPOnly:       true,
+		CookieSameSite:       "Lax",
+		CookiePath:           "/",
+		SessionCookieName:    "session_token",
+		SessionCookieMaxAge:  2592000,
+		OAuthStateCookieName: "oauth_state",
+		OAuthStateCookiePath: "/",
 	}
 }
 
@@ -227,7 +232,7 @@ func TestValidateState(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=abc", nil)
 		c, w := ginTestContext(t, r)
 
-		if validateState(c) {
+		if validateState(c, newTestConfig(true)) {
 			t.Error("expected validateState to return false with no cookie")
 		}
 		if w.Result().StatusCode != http.StatusBadRequest {
@@ -240,7 +245,7 @@ func TestValidateState(t *testing.T) {
 		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "correct-value"})
 		c, _ := ginTestContext(t, r)
 
-		if validateState(c) {
+		if validateState(c, newTestConfig(true)) {
 			t.Error("expected validateState to return false on state mismatch")
 		}
 	})
@@ -250,7 +255,7 @@ func TestValidateState(t *testing.T) {
 		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "matching-value"})
 		c, w := ginTestContext(t, r)
 
-		if !validateState(c) {
+		if !validateState(c, newTestConfig(true)) {
 			t.Fatal("expected validateState to return true on matching state")
 		}
 
@@ -295,9 +300,8 @@ func TestSetSessionCookie(t *testing.T) {
 	if cookie.SameSite != http.SameSiteLaxMode {
 		t.Errorf("expected SameSite=Lax, got %v", cookie.SameSite)
 	}
-	wantExpiry := time.Now().Add(30 * 24 * time.Hour)
-	if cookie.Expires.Before(wantExpiry.Add(-time.Minute)) || cookie.Expires.After(wantExpiry.Add(time.Minute)) {
-		t.Errorf("expected Expires around %v, got %v", wantExpiry, cookie.Expires)
+	if cookie.MaxAge != 2592000 {
+		t.Errorf("expected MaxAge=2592000 (30 days), got %d", cookie.MaxAge)
 	}
 }
 
