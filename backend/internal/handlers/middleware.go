@@ -18,7 +18,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := logging.FromContext(c.Request.Context())
 
-		cookie, err := c.Cookie("session_token")
+		cookie, err := c.Cookie(h.cfg.SessionCookieName)
 		if err != nil {
 			logger.Warn("missing session cookie")
 			clearSessionCookie(c, h.cfg) // Clear existing/stale session cookie to avoid repeated 401s

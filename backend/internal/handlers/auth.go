@@ -58,7 +58,7 @@ func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 		MaxAge:   int(cookieCfg.MaxAge.Seconds()),
 		Domain:   cookieCfg.Domain,
 	}
-	c.Header("Set-Cookie", cookie.String())
+	http.SetCookie(c.Writer, cookie)
 
 	cfg := config.GetGoogleOAuthConfig(h.cfg)
 	url := cfg.AuthCodeURL(state, oauth2.AccessTypeOffline)
@@ -66,11 +66,11 @@ func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 }
 
 type googleUserInfo struct {
-	ID            string
-	Email         string
-	VerifiedEmail bool
-	Name          string
-	Picture       string
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"verified_email"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
 }
 
 func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
@@ -140,13 +140,11 @@ func (h *AuthHandler) HandleLogout(c *gin.Context) {
 // clearSessionCookie clears an invalid/expired session cookie to avoid repeated errors
 // and to keep auth behavior predictable.
 func clearSessionCookie(c *gin.Context, cfg *config.Config) {
-	cookie := auth.NewClearedSessionCookie(cfg)
-	c.Header("Set-Cookie", cookie.String())
+	http.SetCookie(c.Writer, auth.NewClearedSessionCookie(cfg))
 }
 
 func setSessionCookie(c *gin.Context, cfg *config.Config, rawToken string) {
-	cookie := auth.NewSessionCookie(rawToken, cfg)
-	c.Header("Set-Cookie", cookie.String())
+	http.SetCookie(c.Writer, auth.NewSessionCookie(rawToken, cfg))
 }
 
 func validateState(c *gin.Context, cfg *config.Config) bool {
@@ -158,8 +156,7 @@ func validateState(c *gin.Context, cfg *config.Config) bool {
 		return false
 	}
 	// Clear oauth_state cookie while preserving original attributes
-	clearedOAuthStateCookie := auth.NewClearedOAuthStateCookie(cfg)
-	c.Header("Set-Cookie", clearedOAuthStateCookie.String())
+	http.SetCookie(c.Writer, auth.NewClearedOAuthStateCookie(cfg))
 	return true
 }
 
