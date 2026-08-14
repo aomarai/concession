@@ -19,9 +19,13 @@ const sessionDuration = 30 * 24 * time.Hour // 30 days
 // GenerateSessionToken creates a random, URL-safe token to hand to the client.
 // Goes into the cookie. Do not store raw.
 func GenerateSessionToken() (string, error) {
-	b := make([]byte, 32)
+	return GenerateRandomToken(32)
+}
+
+func GenerateRandomToken(bytes int) (string, error) {
+	b := make([]byte, bytes)
 	if _, err := rand.Read(b); err != nil {
-		slog.Error("Unable to generate session token", "error", err)
+		slog.Error("Unable to generate random token", "error", err)
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil

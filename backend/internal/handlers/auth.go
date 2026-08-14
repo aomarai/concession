@@ -5,25 +5,28 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/aomarai/concession/internal/auth"
 	"github.com/aomarai/concession/internal/config"
-	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/logging"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
-	DB  *gorm.DB
-	cfg *config.Config
+	DB   *gorm.DB
+	cfg  *config.Config
+	user *auth.UserAuthService
 }
 
 func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{DB: db, cfg: cfg}
+	return &AuthHandler{
+		DB:   db,
+		cfg:  cfg,
+		user: auth.NewUserAuthService(db),
+	}
 }
 
 func generateRandomToken() (string, error) {
@@ -37,7 +40,7 @@ func generateRandomToken() (string, error) {
 func (h *AuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	logger := logging.FromContext(r.Context())
 
-	state, err := generateRandomToken()
+	state, err := auth.GenerateRandomToken(32)
 	if err != nil {
 		logger.Error("failed to generate oauth state", "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -92,14 +95,14 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 	}
 
 	// 3. Fetch the user's Google profile
-	info, err := fetchGoogleUserInfo(r.Context(), cfg, token) // 👈 Pass token here
+	info, err := fetchGoogleUserInfo(r.Context(), cfg, token)
 	if err != nil {
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
 
 	// 4. Find or create the local user + oauth link
-	user, err := h.findOrCreateUser(r.Context(), info)
+	user, err := h.user.FindOrCreateGoogleUser(r.Context(), auth.GoogleUserInfo(info))
 	if err != nil {
 		logger.Error("failed to resolve user", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
@@ -116,47 +119,6 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 
 	setSessionCookie(w, rawToken)
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-}
-
-func (h *AuthHandler) findOrCreateUser(ctx context.Context, info googleUserInfo) (*domain.User, error) {
-	var oauthAccount domain.OAuthAccount
-	err := h.DB.WithContext(ctx).
-		Where("provider = ? AND provider_user_id = ?", "google", info.ID).
-		First(&oauthAccount).Error
-
-	if err == nil {
-		var user domain.User
-		if err := h.DB.WithContext(ctx).First(&user, "id = ?", oauthAccount.UserID).Error; err != nil {
-			return nil, err
-		}
-		return &user, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-
-	// No linked account yet, create user
-	user := domain.User{
-		Username:        info.Email,
-		Email:           info.Email,
-		IsEmailVerified: info.VerifiedEmail,
-		DisplayName:     info.Name,
-		AvatarURL:       info.Picture,
-	}
-	if err := h.DB.WithContext(ctx).Create(&user).Error; err != nil {
-		return nil, err
-	}
-
-	oauthAccount = domain.OAuthAccount{
-		UserID:         user.ID,
-		Provider:       "google",
-		ProviderUserID: info.ID,
-	}
-	if err := h.DB.WithContext(ctx).Create(&oauthAccount).Error; err != nil {
-		return nil, err
-	}
-
-	return &user, nil
 }
 
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {

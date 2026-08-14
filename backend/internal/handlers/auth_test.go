@@ -404,9 +404,9 @@ func TestHandleLogout(t *testing.T) {
 func TestFindOrCreateUser(t *testing.T) {
 	t.Run("creates a new user and linked oauth account", func(t *testing.T) {
 		db := setupAuthHandlerTestDB(t)
-		h := NewAuthHandler(db, newTestConfig(true))
+		service := auth.UserAuthService{DB: db}
 
-		info := googleUserInfo{
+		info := auth.GoogleUserInfo{
 			ID:            "google-id-123",
 			Email:         "newuser@example.com",
 			VerifiedEmail: true,
@@ -414,7 +414,8 @@ func TestFindOrCreateUser(t *testing.T) {
 			Picture:       "https://example.com/avatar.png",
 		}
 
-		user, err := h.findOrCreateUser(context.Background(), info)
+		ctx := context.Background()
+		user, err := service.FindOrCreateGoogleUser(ctx, info)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -445,7 +446,6 @@ func TestFindOrCreateUser(t *testing.T) {
 
 	t.Run("returns the existing user for an already-linked account", func(t *testing.T) {
 		db := setupAuthHandlerTestDB(t)
-		h := NewAuthHandler(db, newTestConfig(true))
 
 		existing := domain.User{Username: "existing@example.com", Email: "existing@example.com", PasswordHash: "x", DisplayName: "Existing User"}
 		if err := db.Create(&existing).Error; err != nil {
@@ -456,8 +456,9 @@ func TestFindOrCreateUser(t *testing.T) {
 			t.Fatalf("unexpected error creating oauth link: %v", err)
 		}
 
-		info := googleUserInfo{ID: "google-id-456", Email: "existing@example.com"}
-		user, err := h.findOrCreateUser(context.Background(), info)
+		service := auth.UserAuthService{DB: db}
+		info := auth.GoogleUserInfo{ID: "google-id-456", Email: "existing@example.com"}
+		user, err := service.FindOrCreateGoogleUser(context.Background(), info)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -474,13 +475,14 @@ func TestFindOrCreateUser(t *testing.T) {
 
 	t.Run("propagates unexpected DB errors instead of creating a user", func(t *testing.T) {
 		db := setupAuthHandlerTestDB(t)
-		h := NewAuthHandler(db, newTestConfig(true))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // force the initial lookup query to fail with something other than ErrRecordNotFound
 
-		info := googleUserInfo{ID: "google-id-789", Email: "shouldnotexist@example.com"}
-		_, err := h.findOrCreateUser(ctx, info)
+		info := auth.GoogleUserInfo{ID: "google-id-789", Email: "shouldnotexist@example.com"}
+		service := auth.UserAuthService{DB: db}
+		_, err := service.FindOrCreateGoogleUser(ctx, info)
+		//_, err := h.findOrCreateUser(ctx, info)
 		if err == nil {
 			t.Fatal("expected an error from a canceled context, got nil")
 		}
