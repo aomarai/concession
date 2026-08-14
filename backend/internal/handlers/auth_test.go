@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
 	"github.com/aomarai/concession/internal/auth"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"

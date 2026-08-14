@@ -66,11 +66,11 @@ func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 }
 
 type googleUserInfo struct {
-	ID            string 
-	Email         string 
-	VerifiedEmail bool   
-	Name          string 
-	Picture       string 
+	ID            string
+	Email         string
+	VerifiedEmail bool
+	Name          string
+	Picture       string
 }
 
 func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
