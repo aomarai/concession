@@ -13,7 +13,7 @@ func NewSessionCookie(rawToken string, cfg *config.Config) *http.Cookie {
 		Name:     cookieCfg.Name,
 		Value:    rawToken,
 		Path:     cookieCfg.Path,
-		MaxAge:   int(cookieCfg.MaxAge.Seconds()),
+		MaxAge:   cookieCfg.MaxAge,
 		Secure:   cookieCfg.Secure,
 		HttpOnly: cookieCfg.HTTPOnly,
 		SameSite: cookieCfg.SameSite,

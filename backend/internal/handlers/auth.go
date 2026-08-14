@@ -55,7 +55,7 @@ func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 		HttpOnly: cookieCfg.HTTPOnly,
 		Secure:   cookieCfg.Secure,
 		SameSite: cookieCfg.SameSite,
-		MaxAge:   int(cookieCfg.MaxAge.Seconds()),
+		MaxAge:   cookieCfg.MaxAge,
 		Domain:   cookieCfg.Domain,
 	}
 	http.SetCookie(c.Writer, cookie)

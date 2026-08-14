@@ -76,9 +76,11 @@ func setupDB(cfg *config.Config, logger *slog.Logger) *gorm.DB {
 }
 
 func setupRouter(authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) *gin.Engine {
-	r := gin.Default()
-
-	// Global logging middleware
+	// Use gin.New() instead of gin.Default() to avoid Gin's built-in logger
+	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
+	// We explicitly add only the recovery middleware and our structured logger.
+	r := gin.New()
+	r.Use(gin.Recovery())
 	r.Use(logging.GinRequestLoggerMiddleware(logger))
 
 	apiV1 := r.Group("/api/v1")
