@@ -11,7 +11,6 @@ import (
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
-	"github.com/sethvargo/go-envconfig"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -63,50 +62,41 @@ func initDB(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func main() {
-	var slogHandler slog.Handler
-
-	ctx := context.Background()
-	cfg, err := config.Load(ctx)
-	if err != nil {
-		slog.Error("Could not load configuration")
-		os.Exit(1)
-	}
-
-	if err := envconfig.Process(ctx, cfg); err != nil {
-		slog.Error("Failed to load configuration", "error", err)
-		os.Exit(1)
-	}
-
-	if cfg.Environment == "prod" {
-		slogHandler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-	} else {
-		slogHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
-	}
-
-	logger := slog.New(slogHandler)
-	slog.SetDefault(logger)
-
+func setupDB(cfg *config.Config, logger *slog.Logger) *gorm.DB {
 	db, err := initDB(cfg)
 	if err != nil {
 		logger.Error("Failed to initialize database", "error", err)
 		os.Exit(1)
 	}
+	return db
+}
 
-	authHandler := handlers.NewAuthHandler(db, cfg)
-	userHandler := handlers.NewUserHandler(db)
-
+func setupMux(authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/me", authHandler.AuthenticateMiddleware(http.HandlerFunc(userHandler.HandleGetMe)))
 	mux.HandleFunc("/api/v1/auth/google/login", authHandler.HandleGoogleLogin)
 	mux.HandleFunc("/api/v1/auth/google/callback", authHandler.HandleGoogleCallback)
 	mux.HandleFunc("/api/v1/auth/logout", authHandler.HandleLogout)
 
-	// Example of a protected route:
-	// mux.Handle("/api/v1/me", authHandler.AuthenticateMiddleware(http.HandlerFunc(someHandler)))
-
 	var rootHandler http.Handler = mux
-	rootHandler = logging.RequestLoggerMiddleware(logger)(rootHandler) // logging wraps everything
+	rootHandler = logging.RequestLoggerMiddleware(logger)(rootHandler)
+	return rootHandler
+}
+
+func main() {
+	ctx := context.Background()
+	cfg, err := config.Load(ctx)
+	if err != nil {
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
+	}
+
+	logger := logging.NewLogger(cfg)
+	db := setupDB(cfg, logger)
+
+	authHandler := handlers.NewAuthHandler(db, cfg)
+	userHandler := handlers.NewUserHandler(db)
+	rootHandler := setupMux(authHandler, userHandler, logger)
 
 	port := cfg.Port
 	if port == "" {
