@@ -20,5 +20,12 @@
 	"mounts": [
     "source=${localEnv:USERPROFILE}/.agents,target=/home/vscode/.agents,type=bind,consistency=cached",
     "source=${localEnv:USERPROFILE}/Documents/Cline,target=/home/vscode/Documents/Cline,type=bind,consistency=cached"
-	]
+    ],
+  "customizations": {
+    "jetbrains": {
+      "settings": {
+        "com.intellij:app:HttpConfigurable.use_proxy_pac": true
+      }
+    }
+  }
 }

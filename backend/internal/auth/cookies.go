@@ -8,6 +8,8 @@ import (
 	"github.com/aomarai/concession/internal/config"
 )
 
+// NewSessionCookie builds an http.Cookie for the session token.
+// The caller decides whether to set it via http.SetCookie or gin.Context.SetCookie.
 func NewSessionCookie(value string, cfg *config.Config) *http.Cookie {
 	return &http.Cookie{
 		Name:     "session_token",
@@ -20,6 +22,7 @@ func NewSessionCookie(value string, cfg *config.Config) *http.Cookie {
 	}
 }
 
+// NewClearedSessionCookie builds an expired session cookie to clear the existing one.
 func NewClearedSessionCookie(cfg *config.Config) *http.Cookie {
 	c := NewSessionCookie("", cfg)
 	c.MaxAge = -1

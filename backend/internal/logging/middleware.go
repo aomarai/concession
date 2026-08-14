@@ -2,41 +2,38 @@ package logging
 
 import (
 	"log/slog"
-	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-// RequestLoggerMiddleware seeds each request's context with a logger
+// GinRequestLoggerMiddleware seeds each request's context with a logger
 // enriched with a request ID, method, and path, so every handler and
 // downstream function can log with consistent correlation fields.
-func RequestLoggerMiddleware(base *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
-			reqID := uuid.NewString()
+func GinRequestLoggerMiddleware(base *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		reqID := uuid.NewString()
 
-			// Let clients/tools correlate this response back to server logs.
-			w.Header().Set("X-Request-ID", reqID)
+		// Let clients/tools correlate this response back to server logs.
+		c.Header("X-Request-ID", reqID)
 
-			logger := base.With(
-				"request_id", reqID,
-				"method", r.Method,
-				"path", r.URL.Path,
-			)
+		logger := base.With(
+			"request_id", reqID,
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+		)
 
-			logger.Info("request started")
+		logger.Info("request started")
 
-			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		c.Next()
 
-			ctx := WithLogger(r.Context(), logger)
-			next.ServeHTTP(rec, r.WithContext(ctx))
+		rec := &statusRecorder{ResponseWriter: c.Writer, status: c.Writer.Status()}
 
-			logger.Info("request completed",
-				"status", rec.status,
-				"duration_ms", time.Since(start).Milliseconds(),
-			)
-		})
+		logger.Info("request completed",
+			"status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
 	}
 }
