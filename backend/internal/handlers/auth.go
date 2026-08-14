@@ -117,7 +117,7 @@ func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	setSessionCookie(w, rawToken)
+	setSessionCookie(w, h.cfg, rawToken)
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
@@ -130,22 +130,18 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 			logger.Error("failed to revoke session", "error", revokeErr)
 		}
 	}
-	clearSessionCookie(w)
+	clearSessionCookie(w, h.cfg)
 	w.WriteHeader(http.StatusOK)
 }
 
 // clearSessionCookie clears an invalid/expired session cookie to avoid repeated errors
 // and to keep auth behavior predictable.
-func clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+func clearSessionCookie(w http.ResponseWriter, cfg *config.Config) {
+	http.SetCookie(w, auth.NewClearedSessionCookie(cfg))
+}
+
+func setSessionCookie(w http.ResponseWriter, cfg *config.Config, rawToken string) {
+	http.SetCookie(w, auth.NewSessionCookie(rawToken, cfg))
 }
 
 func validateState(w http.ResponseWriter, r *http.Request) bool {
@@ -187,16 +183,4 @@ func fetchGoogleUserInfo(ctx context.Context, cfg *oauth2.Config, token *oauth2.
 		return googleUserInfo{}, err
 	}
 	return info, nil
-}
-
-func setSessionCookie(w http.ResponseWriter, rawToken string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_token",
-		Value:    rawToken,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(30 * 24 * time.Hour),
-	})
 }

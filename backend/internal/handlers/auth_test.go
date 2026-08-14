@@ -279,8 +279,9 @@ func TestValidateState(t *testing.T) {
 // ---- session cookie helpers -------------------------------------------------
 
 func TestSetSessionCookie(t *testing.T) {
+	cfg := newTestConfig(true)
 	w := httptest.NewRecorder()
-	setSessionCookie(w, "raw-token-value")
+	setSessionCookie(w, cfg, "raw-token-value")
 
 	var cookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
@@ -316,7 +317,8 @@ func TestSetSessionCookieAlwaysSecure(t *testing.T) {
 	// breaking login in that environment. Worth confirming whether that's
 	// intentional.
 	w := httptest.NewRecorder()
-	setSessionCookie(w, "token")
+	cfg := newTestConfig(true)
+	setSessionCookie(w, cfg, "token")
 
 	for _, c := range w.Result().Cookies() {
 		if c.Name == "session_token" && !c.Secure {
@@ -327,7 +329,8 @@ func TestSetSessionCookieAlwaysSecure(t *testing.T) {
 
 func TestClearSessionCookie(t *testing.T) {
 	w := httptest.NewRecorder()
-	clearSessionCookie(w)
+	cfg := newTestConfig(true)
+	clearSessionCookie(w, cfg)
 
 	var cookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
