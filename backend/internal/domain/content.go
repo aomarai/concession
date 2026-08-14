@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,32 @@ const (
 	ReviewableMovies ReviewableItem = "movie"
 	ReviewableShows  ReviewableItem = "show"
 )
+
+// DeleteSeasonCascade soft-deletes a season and all of its episodes as a
+// single transaction. Episodes are deleted first so nothing is left
+// dangling if the season delete fails partway through.
+func DeleteSeasonCascade(ctx context.Context, db *gorm.DB, seasonID uint64) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("season_id = ?", seasonID).Delete(&Episode{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&Season{}, seasonID).Error
+	})
+}
+
+// DeleteShowCascade soft-deletes a show along with all of its seasons and
+// episodes in a single transaction.
+func DeleteShowCascade(ctx context.Context, db *gorm.DB, showID uint64) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("show_id = ?", showID).Delete(&Episode{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("show_id = ?", showID).Delete(&Season{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&Show{}, showID).Error
+	})
+}
 
 type Review struct {
 	BaseUUID
