@@ -398,16 +398,22 @@ func newMockGoogleServer(t *testing.T, userInfo googleUserInfo) *httptest.Server
 		w.Header().Set("Content-Type", "application/json")
 		// Handle token endpoint
 		if r.URL.Path == "/token" {
-			json.NewEncoder(w).Encode(map[string]string{
+			err := json.NewEncoder(w).Encode(map[string]string{
 				"access_token":  "test-access-token",
 				"refresh_token": "test-refresh-token",
 				"token_type":    "Bearer",
 				"expires_in":    "3600",
 			})
+			if err != nil {
+				return
+			}
 			return
 		}
 		// Handle userinfo endpoint
-		json.NewEncoder(w).Encode(userInfo)
+		err := json.NewEncoder(w).Encode(userInfo)
+		if err != nil {
+			return
+		}
 	}))
 }
 
