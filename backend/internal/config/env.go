@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -23,14 +24,18 @@ type CookieConfig struct {
 }
 
 // SameSiteFromString converts a string representation of SameSite to the
-// corresponding http.SameSite constant.
+// corresponding http.SameSite constant. The comparison is case-insensitive to
+// tolerate common env-var variations (e.g. "strict", "NONE", "lax").
 func SameSiteFromString(s string) http.SameSite {
-	switch s {
-	case "Strict":
+	switch strings.ToLower(s) {
+	case "strict":
 		return http.SameSiteStrictMode
-	case "None":
+	case "none":
 		return http.SameSiteNoneMode
+	case "lax":
+		return http.SameSiteLaxMode
 	default:
+		// fall back to Lax for unknown values
 		return http.SameSiteLaxMode
 	}
 }

@@ -25,14 +25,17 @@ func GinRequestLoggerMiddleware(base *slog.Logger) gin.HandlerFunc {
 			"path", c.Request.URL.Path,
 		)
 
+		// Inject the enriched logger into the request context so downstream
+		// handlers and services can retrieve it via logging.FromContext.
+		ctx := WithLogger(c.Request.Context(), logger)
+		c.Request = c.Request.WithContext(ctx)
+
 		logger.Info("request started")
 
 		c.Next()
 
-		rec := &statusRecorder{ResponseWriter: c.Writer, status: c.Writer.Status()}
-
 		logger.Info("request completed",
-			"status", rec.status,
+			"status", c.Writer.Status(),
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
 	}

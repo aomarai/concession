@@ -251,26 +251,64 @@ func TestValidateState(t *testing.T) {
 		}
 	})
 
-	t.Run("accepts a matching state and clears the cookie", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=matching-value", nil)
-		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "matching-value"})
+	t.Run("accepts a matching state and clears the cookie with preserved attributes", func(t *testing.T) {
+		cfg := newTestConfig(true)
+		cookieCfg := cfg.OAuthStateCookie()
+
+		// Create the original oauth_state cookie as it would be set on login
+		originalCookie := &http.Cookie{
+			Name:     cookieCfg.Name,
+			Value:    "expected-state",
+			Path:     cookieCfg.Path,
+			Domain:   cookieCfg.Domain,
+			Secure:   cookieCfg.Secure,
+			HttpOnly: cookieCfg.HTTPOnly,
+			SameSite: cookieCfg.SameSite,
+		}
+
+		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=expected-state", nil)
+		r.AddCookie(originalCookie)
 		c, w := ginTestContext(t, r)
 
-		if !validateState(c, newTestConfig(true)) {
-			t.Fatal("expected validateState to return true on matching state")
+		if !validateState(c, cfg) {
+			t.Fatal("expected validateState to accept matching state and cookie")
 		}
 
+		resp := w.Result()
 		var cleared *http.Cookie
-		for _, c := range w.Result().Cookies() {
-			if c.Name == "oauth_state" {
-				cleared = c
+		for _, cookie := range resp.Cookies() {
+			if cookie.Name == originalCookie.Name {
+				cleared = cookie
+				break
 			}
 		}
+
 		if cleared == nil {
-			t.Fatal("expected validateState to clear the oauth_state cookie")
+			t.Fatal("expected response to include cleared oauth_state cookie")
 		}
-		if cleared.MaxAge >= 0 {
-			t.Errorf("expected MaxAge < 0 to clear the cookie, got %d", cleared.MaxAge)
+
+		// Validate that MaxAge indicates clearing
+		if cleared.MaxAge != -1 {
+			t.Fatalf("expected cleared cookie MaxAge to be -1; got %d", cleared.MaxAge)
+		}
+
+		// Validate attributes that should mirror the original/configured cookie
+		if cleared.Path != cookieCfg.Path {
+			t.Fatalf("expected cleared cookie Path %q; got %q", cookieCfg.Path, cleared.Path)
+		}
+
+		if cleared.Domain != cookieCfg.Domain {
+			t.Fatalf("expected cleared cookie Domain %q; got %q", cookieCfg.Domain, cleared.Domain)
+		}
+
+		if cleared.SameSite != cookieCfg.SameSite {
+			t.Fatalf("expected cleared cookie SameSite %v; got %v", cookieCfg.SameSite, cleared.SameSite)
+		}
+		if cleared.Secure != cookieCfg.Secure {
+			t.Fatalf("expected cleared cookie Secure %v; got %v", cookieCfg.Secure, cleared.Secure)
+		}
+		if cleared.HttpOnly != cookieCfg.HTTPOnly {
+			t.Fatalf("expected cleared cookie HttpOnly %v; got %v", cookieCfg.HTTPOnly, cleared.HttpOnly)
 		}
 	})
 }
@@ -446,6 +484,7 @@ func TestHandleGoogleCallback(t *testing.T) {
 		for _, c := range w.Result().Cookies() {
 			if c.Name == "session_token" {
 				sessionCookie = c
+				break
 			}
 		}
 		if sessionCookie == nil {
@@ -455,12 +494,24 @@ func TestHandleGoogleCallback(t *testing.T) {
 			t.Error("expected session_token cookie to have a non-empty value")
 		}
 
+		// Validate that the cookie corresponds to a real, persisted session
+		session, err := auth.ValidateSession(c.Request.Context(), db, sessionCookie.Value)
+		if err != nil {
+			t.Fatalf("expected ValidateSession to succeed: %v", err)
+		}
+		if session == nil {
+			t.Fatal("expected ValidateSession to return a session")
+		}
+
 		var user domain.User
 		if err := db.Where("email = ?", userInfo.Email).First(&user).Error; err != nil {
 			t.Fatalf("expected user to exist in DB: %v", err)
 		}
 		if user.Email != userInfo.Email {
 			t.Errorf("expected user email %q, got %q", userInfo.Email, user.Email)
+		}
+		if session.UserID != user.ID {
+			t.Errorf("expected session UserID %d to match user ID %d", session.UserID, user.ID)
 		}
 	})
 
