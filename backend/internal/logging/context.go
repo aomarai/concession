@@ -3,7 +3,6 @@ package logging
 import (
 	"context"
 	"log/slog"
-	"net/http"
 )
 
 type ctxKey string
@@ -21,23 +20,4 @@ func FromContext(ctx context.Context) *slog.Logger {
 		return logger
 	}
 	return slog.Default()
-}
-
-type statusRecorder struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (r *statusRecorder) WriteHeader(status int) {
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
-	r.wroteHeader = true
-}
-
-func (r *statusRecorder) Write(b []byte) (int, error) {
-	if !r.wroteHeader {
-		r.WriteHeader(http.StatusOK)
-	}
-	return r.ResponseWriter.Write(b)
 }

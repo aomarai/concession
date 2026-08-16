@@ -6,11 +6,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/aomarai/concession/internal/auth"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 )
@@ -37,29 +37,32 @@ func generateRandomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (h *AuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) {
-	logger := logging.FromContext(r.Context())
+func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
+	logger := logging.FromContext(c.Request.Context())
 
 	state, err := auth.GenerateRandomToken(32)
 	if err != nil {
 		logger.Error("failed to generate oauth state", "error", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal error"})
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
+	cookieCfg := h.cfg.OAuthStateCookie()
+	cookie := &http.Cookie{
+		Name:     cookieCfg.Name,
 		Value:    state,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.cfg.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(10 * time.Minute),
-	})
+		Path:     cookieCfg.Path,
+		HttpOnly: cookieCfg.HTTPOnly,
+		Secure:   cookieCfg.Secure,
+		SameSite: cookieCfg.SameSite,
+		MaxAge:   cookieCfg.MaxAge,
+		Domain:   cookieCfg.Domain,
+	}
+	http.SetCookie(c.Writer, cookie)
 
 	cfg := config.GetGoogleOAuthConfig(h.cfg)
 	url := cfg.AuthCodeURL(state, oauth2.AccessTypeOffline)
-	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
 type googleUserInfo struct {
@@ -70,95 +73,90 @@ type googleUserInfo struct {
 	Picture       string `json:"picture"`
 }
 
-func (h *AuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
-	logger := logging.FromContext(r.Context())
+func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
+	logger := logging.FromContext(c.Request.Context())
 
 	// 1. Verify state to prevent CSRF
-	if !validateState(w, r) {
+	if !validateState(c, h.cfg) {
 		return
 	}
 
-	code := r.URL.Query().Get("code")
+	code := c.Query("code")
 	if code == "" {
 		logger.Warn("missing oauth code")
-		http.Error(w, "Missing code", http.StatusBadRequest)
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Missing code"})
 		return
 	}
 
 	// 2. Exchange code for a Google access token
 	cfg := config.GetGoogleOAuthConfig(h.cfg)
-	token, err := cfg.Exchange(r.Context(), code) // 👈 Save the returned token
+	token, err := cfg.Exchange(c.Request.Context(), code)
 	if err != nil {
 		logger.Error("oauth code exchange failed", "error", err)
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
 		return
 	}
 
 	// 3. Fetch the user's Google profile
-	info, err := fetchGoogleUserInfo(r.Context(), cfg, token)
+	info, err := fetchGoogleUserInfo(c.Request.Context(), cfg, token)
 	if err != nil {
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
 		return
 	}
 
 	// 4. Find or create the local user + oauth link
-	user, err := h.user.FindOrCreateGoogleUser(r.Context(), auth.GoogleUserInfo(info))
+	user, err := h.user.FindOrCreateGoogleUser(c.Request.Context(), auth.GoogleUserInfo(info))
 	if err != nil {
 		logger.Error("failed to resolve user", "error", err)
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
 		return
 	}
 
 	// 5. Issue a session
-	rawToken, err := auth.CreateSession(r.Context(), h.DB, user.ID, r.UserAgent(), r.RemoteAddr)
+	rawToken, err := auth.CreateSession(c.Request.Context(), h.DB, user.ID, c.Request.UserAgent(), c.Request.RemoteAddr)
 	if err != nil {
 		logger.Error("failed to create session", "error", err)
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
 		return
 	}
 
-	setSessionCookie(w, h.cfg, rawToken)
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	setSessionCookie(c, h.cfg, rawToken)
+	c.Redirect(http.StatusTemporaryRedirect, "/")
 }
 
-func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	logger := logging.FromContext(r.Context())
+func (h *AuthHandler) HandleLogout(c *gin.Context) {
+	logger := logging.FromContext(c.Request.Context())
 
-	cookie, err := r.Cookie("session_token")
+	cookie, err := c.Cookie(h.cfg.SessionCookieName)
 	if err == nil {
-		if revokeErr := auth.RevokeSession(r.Context(), h.DB, cookie.Value); revokeErr != nil {
+		if revokeErr := auth.RevokeSession(c.Request.Context(), h.DB, cookie); revokeErr != nil {
 			logger.Error("failed to revoke session", "error", revokeErr)
 		}
 	}
-	clearSessionCookie(w, h.cfg)
-	w.WriteHeader(http.StatusOK)
+	clearSessionCookie(c, h.cfg)
+	c.Status(http.StatusOK)
 }
 
 // clearSessionCookie clears an invalid/expired session cookie to avoid repeated errors
 // and to keep auth behavior predictable.
-func clearSessionCookie(w http.ResponseWriter, cfg *config.Config) {
-	http.SetCookie(w, auth.NewClearedSessionCookie(cfg))
+func clearSessionCookie(c *gin.Context, cfg *config.Config) {
+	http.SetCookie(c.Writer, auth.NewClearedSessionCookie(cfg))
 }
 
-func setSessionCookie(w http.ResponseWriter, cfg *config.Config, rawToken string) {
-	http.SetCookie(w, auth.NewSessionCookie(rawToken, cfg))
+func setSessionCookie(c *gin.Context, cfg *config.Config, rawToken string) {
+	http.SetCookie(c.Writer, auth.NewSessionCookie(rawToken, cfg))
 }
 
-func validateState(w http.ResponseWriter, r *http.Request) bool {
-	ctxLogger := logging.FromContext(r.Context())
-	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
+func validateState(c *gin.Context, cfg *config.Config) bool {
+	ctxLogger := logging.FromContext(c.Request.Context())
+	stateCookie, err := c.Cookie(cfg.OAuthStateCookieName)
+	if err != nil || c.Query("state") != stateCookie {
 		ctxLogger.Warn("oauth state mismatch or missing")
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return false
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	// Clear oauth_state cookie while preserving original attributes
+	http.SetCookie(c.Writer, auth.NewClearedOAuthStateCookie(cfg))
 	return true
 }
 

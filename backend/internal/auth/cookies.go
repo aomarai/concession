@@ -1,28 +1,57 @@
-// internal/auth/cookies.go
 package auth
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/aomarai/concession/internal/config"
 )
 
-func NewSessionCookie(value string, cfg *config.Config) *http.Cookie {
+// NewSessionCookie creates a session cookie using the configured cookie settings.
+func NewSessionCookie(rawToken string, cfg *config.Config) *http.Cookie {
+	cookieCfg := cfg.SessionCookie()
 	return &http.Cookie{
-		Name:     "session_token",
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   cfg.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(30 * 24 * time.Hour),
+		Name:     cookieCfg.Name,
+		Value:    rawToken,
+		Path:     cookieCfg.Path,
+		MaxAge:   cookieCfg.MaxAge,
+		Secure:   cookieCfg.Secure,
+		HttpOnly: cookieCfg.HTTPOnly,
+		SameSite: cookieCfg.SameSite,
+		Domain:   cookieCfg.Domain,
 	}
 }
 
+// NewClearedSessionCookie creates a cookie that clears the session cookie by
+// setting MaxAge to -1. It mirrors the original session cookie's attributes so
+// browsers treat the clearing cookie identically to the one that was set.
 func NewClearedSessionCookie(cfg *config.Config) *http.Cookie {
-	c := NewSessionCookie("", cfg)
-	c.MaxAge = -1
-	c.Expires = time.Time{}
-	return c
+	cookieCfg := cfg.SessionCookie()
+	return &http.Cookie{
+		Name:     cookieCfg.Name,
+		Value:    "",
+		Path:     cookieCfg.Path,
+		MaxAge:   -1,
+		Secure:   cookieCfg.Secure,
+		HttpOnly: cookieCfg.HTTPOnly,
+		SameSite: cookieCfg.SameSite,
+		Domain:   cookieCfg.Domain,
+	}
+}
+
+// NewClearedOAuthStateCookie creates a cookie that clears the oauth_state
+// cookie by setting MaxAge to -1. It mirrors the original oauth_state cookie's
+// attributes so browsers treat the clearing cookie identically to the one that
+// was set.
+func NewClearedOAuthStateCookie(cfg *config.Config) *http.Cookie {
+	cookieCfg := cfg.OAuthStateCookie()
+	return &http.Cookie{
+		Name:     cookieCfg.Name,
+		Value:    "",
+		Path:     cookieCfg.Path,
+		MaxAge:   -1,
+		Secure:   cookieCfg.Secure,
+		HttpOnly: cookieCfg.HTTPOnly,
+		SameSite: cookieCfg.SameSite,
+		Domain:   cookieCfg.Domain,
+	}
 }

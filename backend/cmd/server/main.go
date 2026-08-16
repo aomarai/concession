@@ -6,11 +6,15 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -71,20 +75,33 @@ func setupDB(cfg *config.Config, logger *slog.Logger) *gorm.DB {
 	return db
 }
 
-func setupMux(authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/api/v1/me", authHandler.AuthenticateMiddleware(http.HandlerFunc(userHandler.HandleGetMe)))
-	mux.HandleFunc("/api/v1/auth/google/login", authHandler.HandleGoogleLogin)
-	mux.HandleFunc("/api/v1/auth/google/callback", authHandler.HandleGoogleCallback)
-	mux.HandleFunc("/api/v1/auth/logout", authHandler.HandleLogout)
+func setupRouter(authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) *gin.Engine {
+	// Use gin.New() instead of gin.Default() to avoid Gin's built-in logger
+	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
+	// We explicitly add only the recovery middleware and our structured logger.
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(logging.GinRequestLoggerMiddleware(logger))
 
-	var rootHandler http.Handler = mux
-	rootHandler = logging.RequestLoggerMiddleware(logger)(rootHandler)
-	return rootHandler
+	apiV1 := r.Group("/api/v1")
+
+	// Public routes
+	apiV1.GET("/auth/google/login", authHandler.HandleGoogleLogin)
+	apiV1.GET("/auth/google/callback", authHandler.HandleGoogleCallback)
+	apiV1.POST("/auth/logout", authHandler.HandleLogout)
+
+	// Authenticated routes
+	auth := apiV1.Group("/")
+	auth.Use(authHandler.AuthMiddleware())
+	auth.GET("/me", userHandler.HandleGetMe)
+
+	return r
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	cfg, err := config.Load(ctx)
 	if err != nil {
 		slog.Error("Failed to load configuration", "error", err)
@@ -96,7 +113,7 @@ func main() {
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
-	rootHandler := setupMux(authHandler, userHandler, logger)
+	engine := setupRouter(authHandler, userHandler, logger)
 
 	port := cfg.Port
 	if port == "" {
@@ -104,7 +121,27 @@ func main() {
 	}
 
 	logger.Info("HTTP server starting", "port", port)
-	if err := http.ListenAndServe(":"+port, rootHandler); err != nil {
+
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: engine,
+	}
+
+	// Graceful shutdown: use Shutdown() so in-flight requests can complete
+	// before the server exits, reducing client-visible errors on deployment.
+	go func() {
+		<-ctx.Done()
+		logger.Info("shutting down server")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("server shutdown error", "error", err)
+		}
+	}()
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("HTTP server stopped", "error", err)
 		os.Exit(1)
 	}

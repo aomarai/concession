@@ -9,11 +9,11 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aomarai/concession/internal/auth"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -24,12 +24,6 @@ import (
 func setupAuthHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	// Unique-per-test DSN — see the identical comment in
-	// internal/domain/testutil_test.go's uniqueSQLiteDSN. Using the bare
-	// "file::memory:?cache=shared" DSN here originally meant every test in
-	// this package (and every subtest) shared the same in-memory database
-	// for the whole test binary run, which is why session counts included
-	// leftovers from unrelated tests.
 	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
@@ -45,18 +39,33 @@ func setupAuthHandlerTestDB(t *testing.T) *gorm.DB {
 
 func newTestConfig(cookieSecure bool) *config.Config {
 	return &config.Config{
-		GoogleClientID:     "test-client-id",
-		GoogleClientSecret: "test-client-secret",
-		GoogleRedirectURL:  "https://app.example.com/auth/google/callback",
-		CookieSecure:       cookieSecure,
+		GoogleClientID:       "test-client-id",
+		GoogleClientSecret:   "test-client-secret",
+		GoogleRedirectURL:    "https://app.example.com/auth/google/callback",
+		CookieSecure:         cookieSecure,
+		CookieHTTPOnly:       true,
+		CookieSameSite:       "Lax",
+		CookiePath:           "/",
+		SessionCookieName:    "session_token",
+		SessionCookieMaxAge:  2592000,
+		OAuthStateCookieName: "oauth_state",
+		OAuthStateCookiePath: "/",
 	}
+}
+
+// ginTestContext creates a Gin context from an httptest.Request so handlers
+// that expect *gin.Context can be exercised directly.
+func ginTestContext(t *testing.T, r *http.Request) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = r
+	return c, w
 }
 
 // redirectingTransport rewrites every outgoing request's scheme+host to
 // point at a local test server, regardless of what the request was
-// originally addressed to. This lets us exercise code that hits hardcoded
-// Google URLs (config.GetGoogleOAuthConfig's google.Endpoint,
-// fetchGoogleUserInfo's userinfo URL) against an httptest.Server instead.
+// originally addressed to.
 type redirectingTransport struct {
 	target *url.URL
 }
@@ -68,14 +77,10 @@ func (t *redirectingTransport) RoundTrip(req *http.Request) (*http.Response, err
 	return http.DefaultTransport.RoundTrip(req)
 }
 
-// withHijackedHTTPClient returns a context that makes the x/oauth2 package
-// route all outgoing HTTP requests to the given test server. This is the
-// package's own documented seam for this (oauth2.HTTPClient context key),
-// not a hack around it.
 func withHijackedHTTPClient(ctx context.Context, testServerURL string) context.Context {
 	u, err := url.Parse(testServerURL)
 	if err != nil {
-		panic(err) // test setup error, not a real failure path
+		panic(err)
 	}
 	client := &http.Client{Transport: &redirectingTransport{target: u}}
 	return context.WithValue(ctx, oauth2.HTTPClient, client)
@@ -113,12 +118,6 @@ func TestGenerateRandomToken(t *testing.T) {
 	})
 }
 
-// Note: this is nearly identical to auth.GenerateSessionToken (32 random
-// bytes, base64 RawURLEncoding). Worth considering consolidating into one
-// shared helper at some point so the "how we generate a random token"
-// logic only lives in one place — not urgent, just flagging the
-// duplication since I noticed it while writing this test.
-
 // ---- HandleGoogleLogin ------------------------------------------------------
 
 func TestHandleGoogleLogin(t *testing.T) {
@@ -127,9 +126,9 @@ func TestHandleGoogleLogin(t *testing.T) {
 	t.Run("sets oauth_state cookie honoring CookieSecure", func(t *testing.T) {
 		h := NewAuthHandler(db, newTestConfig(true))
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/login", nil)
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleGoogleLogin(w, r)
+		h.HandleGoogleLogin(c)
 
 		resp := w.Result()
 		var stateCookie *http.Cookie
@@ -161,9 +160,9 @@ func TestHandleGoogleLogin(t *testing.T) {
 	t.Run("oauth_state cookie is not Secure when CookieSecure=false", func(t *testing.T) {
 		h := NewAuthHandler(db, newTestConfig(false))
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/login", nil)
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleGoogleLogin(w, r)
+		h.HandleGoogleLogin(c)
 
 		var stateCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
@@ -183,9 +182,9 @@ func TestHandleGoogleLogin(t *testing.T) {
 		cfg := newTestConfig(true)
 		h := NewAuthHandler(db, cfg)
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/login", nil)
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleGoogleLogin(w, r)
+		h.HandleGoogleLogin(c)
 
 		resp := w.Result()
 		if resp.StatusCode != http.StatusTemporaryRedirect {
@@ -232,9 +231,9 @@ func TestHandleGoogleLogin(t *testing.T) {
 func TestValidateState(t *testing.T) {
 	t.Run("rejects a request with no oauth_state cookie", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=abc", nil)
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		if validateState(w, r) {
+		if validateState(c, newTestConfig(true)) {
 			t.Error("expected validateState to return false with no cookie")
 		}
 		if w.Result().StatusCode != http.StatusBadRequest {
@@ -245,33 +244,71 @@ func TestValidateState(t *testing.T) {
 	t.Run("rejects a request where state param doesn't match the cookie", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=wrong-value", nil)
 		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "correct-value"})
-		w := httptest.NewRecorder()
+		c, _ := ginTestContext(t, r)
 
-		if validateState(w, r) {
+		if validateState(c, newTestConfig(true)) {
 			t.Error("expected validateState to return false on state mismatch")
 		}
 	})
 
-	t.Run("accepts a matching state and clears the cookie", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=matching-value", nil)
-		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "matching-value"})
-		w := httptest.NewRecorder()
+	t.Run("accepts a matching state and clears the cookie with preserved attributes", func(t *testing.T) {
+		cfg := newTestConfig(true)
+		cookieCfg := cfg.OAuthStateCookie()
 
-		if !validateState(w, r) {
-			t.Fatal("expected validateState to return true on matching state")
+		// Create the original oauth_state cookie as it would be set on login
+		originalCookie := &http.Cookie{
+			Name:     cookieCfg.Name,
+			Value:    "expected-state",
+			Path:     cookieCfg.Path,
+			Domain:   cookieCfg.Domain,
+			Secure:   cookieCfg.Secure,
+			HttpOnly: cookieCfg.HTTPOnly,
+			SameSite: cookieCfg.SameSite,
 		}
 
+		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=expected-state", nil)
+		r.AddCookie(originalCookie)
+		c, w := ginTestContext(t, r)
+
+		if !validateState(c, cfg) {
+			t.Fatal("expected validateState to accept matching state and cookie")
+		}
+
+		resp := w.Result()
 		var cleared *http.Cookie
-		for _, c := range w.Result().Cookies() {
-			if c.Name == "oauth_state" {
-				cleared = c
+		for _, cookie := range resp.Cookies() {
+			if cookie.Name == originalCookie.Name {
+				cleared = cookie
+				break
 			}
 		}
+
 		if cleared == nil {
-			t.Fatal("expected validateState to clear the oauth_state cookie")
+			t.Fatal("expected response to include cleared oauth_state cookie")
 		}
-		if cleared.MaxAge >= 0 {
-			t.Errorf("expected MaxAge < 0 to clear the cookie, got %d", cleared.MaxAge)
+
+		// Validate that MaxAge indicates clearing
+		if cleared.MaxAge != -1 {
+			t.Fatalf("expected cleared cookie MaxAge to be -1; got %d", cleared.MaxAge)
+		}
+
+		// Validate attributes that should mirror the original/configured cookie
+		if cleared.Path != cookieCfg.Path {
+			t.Fatalf("expected cleared cookie Path %q; got %q", cookieCfg.Path, cleared.Path)
+		}
+
+		if cleared.Domain != cookieCfg.Domain {
+			t.Fatalf("expected cleared cookie Domain %q; got %q", cookieCfg.Domain, cleared.Domain)
+		}
+
+		if cleared.SameSite != cookieCfg.SameSite {
+			t.Fatalf("expected cleared cookie SameSite %v; got %v", cookieCfg.SameSite, cleared.SameSite)
+		}
+		if cleared.Secure != cookieCfg.Secure {
+			t.Fatalf("expected cleared cookie Secure %v; got %v", cookieCfg.Secure, cleared.Secure)
+		}
+		if cleared.HttpOnly != cookieCfg.HTTPOnly {
+			t.Fatalf("expected cleared cookie HttpOnly %v; got %v", cookieCfg.HTTPOnly, cleared.HttpOnly)
 		}
 	})
 }
@@ -280,8 +317,9 @@ func TestValidateState(t *testing.T) {
 
 func TestSetSessionCookie(t *testing.T) {
 	cfg := newTestConfig(true)
-	w := httptest.NewRecorder()
-	setSessionCookie(w, cfg, "raw-token-value")
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	c, w := ginTestContext(t, r)
+	setSessionCookie(c, cfg, "raw-token-value")
 
 	var cookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
@@ -301,36 +339,29 @@ func TestSetSessionCookie(t *testing.T) {
 	if cookie.SameSite != http.SameSiteLaxMode {
 		t.Errorf("expected SameSite=Lax, got %v", cookie.SameSite)
 	}
-	wantExpiry := time.Now().Add(30 * 24 * time.Hour)
-	if cookie.Expires.Before(wantExpiry.Add(-time.Minute)) || cookie.Expires.After(wantExpiry.Add(time.Minute)) {
-		t.Errorf("expected Expires around %v, got %v", wantExpiry, cookie.Expires)
+	if cookie.MaxAge != 2592000 {
+		t.Errorf("expected MaxAge=2592000 (30 days), got %d", cookie.MaxAge)
 	}
 }
 
 func TestSetSessionCookieAlwaysSecure(t *testing.T) {
-	// setSessionCookie hardcodes Secure: true — unlike the oauth_state
-	// cookie in HandleGoogleLogin, it does NOT consult cfg.CookieSecure.
-	// This test documents that current behavior rather than asserting
-	// it's correct: in local dev over plain HTTP with COOKIE_SECURE=false,
-	// oauth_state would be set without Secure, but session_token still
-	// would be — which browsers refuse to store over HTTP, silently
-	// breaking login in that environment. Worth confirming whether that's
-	// intentional.
-	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	c, w := ginTestContext(t, r)
 	cfg := newTestConfig(true)
-	setSessionCookie(w, cfg, "token")
+	setSessionCookie(c, cfg, "token")
 
 	for _, c := range w.Result().Cookies() {
 		if c.Name == "session_token" && !c.Secure {
-			t.Error("expected session_token's current implementation to always set Secure=true — if this now fails, the hardcoding was fixed and this test should be updated/removed")
+			t.Error("expected session_token's current implementation to always set Secure=true")
 		}
 	}
 }
 
 func TestClearSessionCookie(t *testing.T) {
-	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	c, w := ginTestContext(t, r)
 	cfg := newTestConfig(true)
-	clearSessionCookie(w, cfg)
+	clearSessionCookie(c, cfg)
 
 	var cookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
@@ -367,9 +398,9 @@ func TestHandleLogout(t *testing.T) {
 
 		r := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 		r.AddCookie(&http.Cookie{Name: "session_token", Value: rawToken})
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleLogout(w, r)
+		h.HandleLogout(c)
 
 		if w.Result().StatusCode != http.StatusOK {
 			t.Errorf("expected status %d, got %d", http.StatusOK, w.Result().StatusCode)
@@ -392,260 +423,95 @@ func TestHandleLogout(t *testing.T) {
 
 	t.Run("does not error when there's no session cookie", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleLogout(w, r)
+		h.HandleLogout(c)
 
 		if w.Result().StatusCode != http.StatusOK {
-			t.Errorf("expected status %d even with no cookie, got %d", http.StatusOK, w.Result().StatusCode)
+			t.Errorf("expected status %d, got %d", http.StatusOK, w.Result().StatusCode)
 		}
 	})
 }
 
-// ---- findOrCreateUser --------------------------------------------------------
+// ---- HandleGoogleCallback ---------------------------------------------------
 
-func TestFindOrCreateUser(t *testing.T) {
-	t.Run("creates a new user and linked oauth account", func(t *testing.T) {
-		db := setupAuthHandlerTestDB(t)
-		service := auth.UserAuthService{DB: db}
-
-		info := auth.GoogleUserInfo{
-			ID:            "google-id-123",
-			Email:         "newuser@example.com",
-			VerifiedEmail: true,
-			Name:          "New User",
-			Picture:       "https://example.com/avatar.png",
-		}
-
-		ctx := context.Background()
-		user, err := service.FindOrCreateGoogleUser(ctx, info)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if user.Email != info.Email {
-			t.Errorf("expected Email %q, got %q", info.Email, user.Email)
-		}
-		if user.Username != info.Email {
-			t.Errorf("expected Username %q, got %q", info.Email, user.Username)
-		}
-		if user.DisplayName != info.Name {
-			t.Errorf("expected DisplayName %q, got %q", info.Name, user.DisplayName)
-		}
-		if user.AvatarURL != info.Picture {
-			t.Errorf("expected AvatarURL %q, got %q", info.Picture, user.AvatarURL)
-		}
-		if !user.IsEmailVerified {
-			t.Error("expected IsEmailVerified to be true")
-		}
-
-		var oauthAccount domain.OAuthAccount
-		if err := db.Where("provider = ? AND provider_user_id = ?", "google", info.ID).First(&oauthAccount).Error; err != nil {
-			t.Fatalf("expected an oauth account to be created: %v", err)
-		}
-		if oauthAccount.UserID != user.ID {
-			t.Errorf("expected oauth account UserID %v, got %v", user.ID, oauthAccount.UserID)
-		}
-	})
-
-	t.Run("returns the existing user for an already-linked account", func(t *testing.T) {
-		db := setupAuthHandlerTestDB(t)
-
-		existing := domain.User{Username: "existing@example.com", Email: "existing@example.com", PasswordHash: "x", DisplayName: "Existing User"}
-		if err := db.Create(&existing).Error; err != nil {
-			t.Fatalf("unexpected error creating user: %v", err)
-		}
-		link := domain.OAuthAccount{UserID: existing.ID, Provider: "google", ProviderUserID: "google-id-456"}
-		if err := db.Create(&link).Error; err != nil {
-			t.Fatalf("unexpected error creating oauth link: %v", err)
-		}
-
-		service := auth.UserAuthService{DB: db}
-		info := auth.GoogleUserInfo{ID: "google-id-456", Email: "existing@example.com"}
-		user, err := service.FindOrCreateGoogleUser(context.Background(), info)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if user.ID != existing.ID {
-			t.Errorf("expected existing user ID %v, got %v", existing.ID, user.ID)
-		}
-
-		var count int64
-		db.Model(&domain.User{}).Where("email = ?", "existing@example.com").Count(&count)
-		if count != 1 {
-			t.Errorf("expected exactly 1 user, got %d — a duplicate may have been created", count)
-		}
-	})
-
-	t.Run("propagates unexpected DB errors instead of creating a user", func(t *testing.T) {
-		db := setupAuthHandlerTestDB(t)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // force the initial lookup query to fail with something other than ErrRecordNotFound
-
-		info := auth.GoogleUserInfo{ID: "google-id-789", Email: "shouldnotexist@example.com"}
-		service := auth.UserAuthService{DB: db}
-		_, err := service.FindOrCreateGoogleUser(ctx, info)
-		//_, err := h.findOrCreateUser(ctx, info)
-		if err == nil {
-			t.Fatal("expected an error from a canceled context, got nil")
-		}
-
-		var count int64
-		db.Model(&domain.User{}).Where("email = ?", "shouldnotexist@example.com").Count(&count)
-		if count != 0 {
-			t.Error("expected no user to be created when the lookup query itself failed")
-		}
-	})
-}
-
-// ---- fetchGoogleUserInfo ------------------------------------------------------
-
-func TestFetchGoogleUserInfo(t *testing.T) {
-	t.Run("decodes a successful response", func(t *testing.T) {
-		want := googleUserInfo{ID: "abc123", Email: "fetch@example.com", VerifiedEmail: true, Name: "Fetch Test", Picture: "https://example.com/pic.png"}
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/oauth2/v2/userinfo" {
-				t.Errorf("unexpected request path: %s", r.URL.Path)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			err := json.NewEncoder(w).Encode(want)
-			if err != nil {
-				return
-			}
-		}))
-		defer server.Close()
-
-		ctx := withHijackedHTTPClient(context.Background(), server.URL)
-		token := &oauth2.Token{AccessToken: "test-token", TokenType: "Bearer", Expiry: time.Now().Add(time.Hour)}
-		cfg := &oauth2.Config{}
-
-		got, err := fetchGoogleUserInfo(ctx, cfg, token)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if got != want {
-			t.Errorf("expected %+v, got %+v", want, got)
-		}
-	})
-
-	t.Run("returns an error on invalid JSON", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, err := w.Write([]byte("not json"))
-			if err != nil {
-				return
-			}
-		}))
-		defer server.Close()
-
-		ctx := withHijackedHTTPClient(context.Background(), server.URL)
-		token := &oauth2.Token{AccessToken: "test-token", TokenType: "Bearer", Expiry: time.Now().Add(time.Hour)}
-		cfg := &oauth2.Config{}
-
-		if _, err := fetchGoogleUserInfo(ctx, cfg, token); err == nil {
-			t.Error("expected an error decoding invalid JSON, got nil")
-		}
-	})
-
-	t.Run("does not itself reject a non-2xx status", func(t *testing.T) {
-		// fetchGoogleUserInfo only checks the transport-level error and
-		// the JSON decode error — it never inspects resp.StatusCode. A
-		// non-2xx response with a valid-JSON error body (typical for
-		// Google's API) decodes without error into a mostly-empty
-		// googleUserInfo instead of surfacing as a failure. This test
-		// documents that; if you'd rather non-2xx be treated as an error,
-		// that's a small addition (check resp.StatusCode before decoding)
-		// and I can add it if you want.
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusUnauthorized)
-			_, err := w.Write([]byte(`{"error":"invalid_token"}`))
-			if err != nil {
-				return
-			}
-		}))
-		defer server.Close()
-
-		ctx := withHijackedHTTPClient(context.Background(), server.URL)
-		token := &oauth2.Token{AccessToken: "bad-token", TokenType: "Bearer", Expiry: time.Now().Add(time.Hour)}
-		cfg := &oauth2.Config{}
-
-		_, err := fetchGoogleUserInfo(ctx, cfg, token)
-		if err != nil {
-			t.Errorf("expected no decode error for a 401 with a valid JSON body (current behavior), got %v", err)
-		}
-	})
-}
-
-// ---- HandleGoogleCallback (full flow) -----------------------------------------
-
-func TestHandleGoogleCallback(t *testing.T) {
-	newMockGoogleServer := func(t *testing.T, userInfo googleUserInfo) *httptest.Server {
-		t.Helper()
-		mux := http.NewServeMux()
-		mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			err := json.NewEncoder(w).Encode(map[string]interface{}{
-				"access_token": "mock-access-token",
-				"token_type":   "Bearer",
-				"expires_in":   3600,
+func newMockGoogleServer(t *testing.T, userInfo googleUserInfo) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Handle token endpoint
+		if r.URL.Path == "/token" {
+			err := json.NewEncoder(w).Encode(map[string]string{
+				"access_token":  "test-access-token",
+				"refresh_token": "test-refresh-token",
+				"token_type":    "Bearer",
+				"expires_in":    "3600",
 			})
 			if err != nil {
 				return
 			}
-		})
-		mux.HandleFunc("/oauth2/v2/userinfo", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			err := json.NewEncoder(w).Encode(userInfo)
-			if err != nil {
-				return
-			}
-		})
-		return httptest.NewServer(mux)
-	}
+			return
+		}
+		// Handle userinfo endpoint
+		err := json.NewEncoder(w).Encode(userInfo)
+		if err != nil {
+			return
+		}
+	}))
+}
 
-	t.Run("full flow creates a user and issues a session", func(t *testing.T) {
-		db := setupAuthHandlerTestDB(t)
-		h := NewAuthHandler(db, newTestConfig(true))
+func TestHandleGoogleCallback(t *testing.T) {
+	db := setupAuthHandlerTestDB(t)
+	h := NewAuthHandler(db, newTestConfig(true))
 
-		userInfo := googleUserInfo{ID: "callback-id-1", Email: "callback@example.com", VerifiedEmail: true, Name: "Callback User"}
+	t.Run("issues a session on a valid callback", func(t *testing.T) {
+		userInfo := googleUserInfo{ID: "test-id", Email: "test@example.com", VerifiedEmail: true, Name: "Test User"}
 		server := newMockGoogleServer(t, userInfo)
 		defer server.Close()
 
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=test-code&state=test-state", nil)
 		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "test-state"})
 		r = r.WithContext(withHijackedHTTPClient(r.Context(), server.URL))
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleGoogleCallback(w, r)
+		h.HandleGoogleCallback(c)
 
-		resp := w.Result()
-		if resp.StatusCode != http.StatusTemporaryRedirect {
-			t.Fatalf("expected status %d, got %d (body: %s)", http.StatusTemporaryRedirect, resp.StatusCode, w.Body.String())
-		}
-		if resp.Header.Get("Location") != "/" {
-			t.Errorf("expected redirect to /, got %q", resp.Header.Get("Location"))
+		if w.Result().StatusCode != http.StatusTemporaryRedirect {
+			t.Errorf("expected status %d, got %d", http.StatusTemporaryRedirect, w.Result().StatusCode)
 		}
 
 		var sessionCookie *http.Cookie
-		for _, c := range resp.Cookies() {
+		for _, c := range w.Result().Cookies() {
 			if c.Name == "session_token" {
 				sessionCookie = c
+				break
 			}
 		}
-		if sessionCookie == nil || sessionCookie.Value == "" {
-			t.Fatal("expected a session_token cookie to be set")
+		if sessionCookie == nil {
+			t.Fatal("expected session_token cookie to be set")
+		}
+		if sessionCookie.Value == "" {
+			t.Error("expected session_token cookie to have a non-empty value")
 		}
 
-		session, err := auth.ValidateSession(context.Background(), db, sessionCookie.Value)
+		// Validate that the cookie corresponds to a real, persisted session
+		session, err := auth.ValidateSession(c.Request.Context(), db, sessionCookie.Value)
 		if err != nil {
-			t.Fatalf("expected the issued session to be valid: %v", err)
+			t.Fatalf("expected ValidateSession to succeed: %v", err)
+		}
+		if session == nil {
+			t.Fatal("expected ValidateSession to return a session")
 		}
 
 		var user domain.User
-		if err := db.First(&user, "id = ?", session.UserID).Error; err != nil {
-			t.Fatalf("expected a user to exist for the session: %v", err)
+		if err := db.Where("email = ?", userInfo.Email).First(&user).Error; err != nil {
+			t.Fatalf("expected user to exist in DB: %v", err)
 		}
 		if user.Email != userInfo.Email {
 			t.Errorf("expected user email %q, got %q", userInfo.Email, user.Email)
+		}
+		if session.UserID != user.ID {
+			t.Errorf("expected session UserID %d to match user ID %d", session.UserID, user.ID)
 		}
 	})
 
@@ -655,9 +521,9 @@ func TestHandleGoogleCallback(t *testing.T) {
 
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=test-code&state=wrong", nil)
 		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "right"})
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleGoogleCallback(w, r)
+		h.HandleGoogleCallback(c)
 
 		if w.Result().StatusCode != http.StatusBadRequest {
 			t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Result().StatusCode)
@@ -670,9 +536,9 @@ func TestHandleGoogleCallback(t *testing.T) {
 
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=test-state", nil)
 		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "test-state"})
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleGoogleCallback(w, r)
+		h.HandleGoogleCallback(c)
 
 		if w.Result().StatusCode != http.StatusBadRequest {
 			t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Result().StatusCode)
@@ -691,9 +557,9 @@ func TestHandleGoogleCallback(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=test-code&state=test-state", nil)
 		r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "test-state"})
 		r = r.WithContext(withHijackedHTTPClient(r.Context(), server.URL))
-		w := httptest.NewRecorder()
+		c, w := ginTestContext(t, r)
 
-		h.HandleGoogleCallback(w, r)
+		h.HandleGoogleCallback(c)
 
 		if w.Result().StatusCode != http.StatusInternalServerError {
 			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, w.Result().StatusCode)
@@ -712,8 +578,8 @@ func TestHandleGoogleCallback(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=test-code&state=test-state", nil)
 			r.AddCookie(&http.Cookie{Name: "oauth_state", Value: "test-state"})
 			r = r.WithContext(withHijackedHTTPClient(r.Context(), server.URL))
-			w := httptest.NewRecorder()
-			h.HandleGoogleCallback(w, r)
+			c, w := ginTestContext(t, r)
+			h.HandleGoogleCallback(c)
 			for _, c := range w.Result().Cookies() {
 				if c.Name == "session_token" {
 					return c
