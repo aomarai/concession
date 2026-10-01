@@ -7,6 +7,7 @@ import InvitesPage from './pages/InvitesPage'
 import ListPage from './pages/ListPage'
 import ListsPage from './pages/ListsPage'
 import NotificationsPage from './pages/NotificationsPage'
+import ProfilePage from './pages/ProfilePage'
 import SearchPage from './pages/SearchPage'
 import SharedListPage from './pages/SharedListPage'
 import TitlePage from './pages/TitlePage'
@@ -63,7 +64,7 @@ export default function App() {
           <NavLink to="/friends" className={navClass}>Friends</NavLink>
           <NavLink to="/notifications" className={navClass}>Notifications<UnreadBadge /></NavLink>
         </nav>
-        <span className="ml-auto text-sm text-zinc-400">{me.data.display_name}</span>
+        <NavLink to="/profile" className={({ isActive }) => `ml-auto text-sm ${isActive ? 'text-amber-400' : 'text-zinc-400 hover:text-amber-300'}`}>{me.data.display_name}</NavLink>
         <button onClick={() => signOut.mutate()} className="text-sm hover:underline">Sign out</button>
       </header>
       <Routes>
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/invites" element={<InvitesPage />} />
         <Route path="/friends" element={<FriendsPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/shared/:token" element={<SharedListPage />} />
         <Route path="/movies/:tmdbId" element={<TitlePage kind="movies" />} />

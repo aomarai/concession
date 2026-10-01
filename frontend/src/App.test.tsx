@@ -99,4 +99,13 @@ describe('App auth gate', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Friends' }))
     expect(await screen.findByText(/no friends yet/i)).toBeInTheDocument()
   })
+
+  it('links your name to the profile page', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [] })
+    vi.mocked(api.listMyReviews).mockResolvedValue({ reviews: [], page: 1, per_page: 20, total: 0 })
+    renderWithProviders(<App />)
+    await userEvent.click(await screen.findByRole('link', { name: 'Ada L' }))
+    expect(await screen.findByText(/nothing tracked yet/i)).toBeInTheDocument()
+  })
 })
