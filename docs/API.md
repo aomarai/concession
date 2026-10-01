@@ -10,7 +10,7 @@ Every error uses the same shape:
 { "error": { "code": "unauthorized", "message": "Unauthorized" } }
 ```
 
-Codes in use: `bad_request` (400), `unauthorized` (401), `not_found` (404), `internal_error` (500), `upstream_error` (502), `unhealthy` (503).
+Codes in use: `bad_request` (400), `unauthorized` (401), `not_found` (404; also returned for unknown routes), `method_not_allowed` (405), `internal_error` (500; also returned if a handler panics), `upstream_error` (502), `unhealthy` (503).
 
 ## Endpoints
 
