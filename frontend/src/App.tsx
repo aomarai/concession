@@ -2,9 +2,11 @@ import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from './api/client'
 import { getMe, logout } from './api/endpoints'
+import InvitesPage from './pages/InvitesPage'
 import ListPage from './pages/ListPage'
 import ListsPage from './pages/ListsPage'
 import SearchPage from './pages/SearchPage'
+import SharedListPage from './pages/SharedListPage'
 import TitlePage from './pages/TitlePage'
 import { errorMessage } from './lib/format'
 
@@ -48,6 +50,7 @@ export default function App() {
         <nav className="flex gap-4">
           <NavLink to="/" end className={navClass}>Lists</NavLink>
           <NavLink to="/search" className={navClass}>Search</NavLink>
+          <NavLink to="/invites" className={navClass}>Invites</NavLink>
         </nav>
         <span className="ml-auto text-sm text-zinc-400">{me.data.display_name}</span>
         <button onClick={() => signOut.mutate()} className="text-sm hover:underline">Sign out</button>
@@ -56,6 +59,8 @@ export default function App() {
         <Route path="/" element={<ListsPage />} />
         <Route path="/lists/:id" element={<ListPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/invites" element={<InvitesPage />} />
+        <Route path="/shared/:token" element={<SharedListPage />} />
         <Route path="/movies/:tmdbId" element={<TitlePage kind="movies" />} />
         <Route path="/shows/:tmdbId" element={<TitlePage kind="shows" />} />
         <Route path="*" element={<p>Page not found.</p>} />

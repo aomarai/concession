@@ -58,6 +58,23 @@ describe('endpoints', () => {
       ['/me/progress/movies/603', { method: 'PUT', body: { status: 'completed' } }],
     ],
     ['clear progress', () => api.clearProgress('movies', 603), ['/me/progress/movies/603', { method: 'DELETE' }]],
+    ['members', () => api.listMembers('l1'), ['/watchlists/l1/collaborators']],
+    [
+      'invite',
+      () => api.inviteMember('l1', 'grace', 'editor'),
+      ['/watchlists/l1/collaborators', { method: 'POST', body: { user: 'grace', role: 'editor' } }],
+    ],
+    [
+      'set role',
+      () => api.setMemberRole('l1', 'u2', 'viewer'),
+      ['/watchlists/l1/collaborators/u2', { method: 'PATCH', body: { role: 'viewer' } }],
+    ],
+    ['remove member', () => api.removeMember('l1', 'u2'), ['/watchlists/l1/collaborators/u2', { method: 'DELETE' }]],
+    ['invites', () => api.listInvites(), ['/me/invites']],
+    ['accept', () => api.acceptInvite('i1'), ['/invites/i1/accept', { method: 'POST' }]],
+    ['decline', () => api.declineInvite('i1'), ['/invites/i1/decline', { method: 'POST' }]],
+    ['rotate token', () => api.rotateShareToken('l1'), ['/watchlists/l1/share-token', { method: 'POST' }]],
+    ['shared', () => api.getShared('a b'), ['/shared/a%20b']],
     ['remove item', () => api.removeItem('l1', 'i1'), ['/watchlists/l1/items/i1', { method: 'DELETE' }]],
   ])('%s', async (_name, call, expected) => {
     await call()

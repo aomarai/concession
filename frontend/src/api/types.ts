@@ -18,6 +18,7 @@ export interface WatchlistSummary {
   type: ListType
   role: Role
   item_count: number
+  share_token?: string
 }
 
 export interface Genre {
@@ -132,4 +133,31 @@ export interface ProgressInput {
   status: WatchStatus
   last_season_num?: number
   last_episode_num?: number
+}
+
+export interface Person {
+  id: string
+  display_name: string
+  avatar_url?: string
+}
+
+export type MemberRole = 'editor' | 'viewer'
+
+export interface Member extends Person {
+  role: Role
+  status: 'pending' | 'accepted'
+}
+
+export interface Members {
+  owner: Member
+  members: Member[]
+  pending?: Member[]
+}
+
+export interface Invite {
+  id: string
+  watchlist_id: string
+  watchlist_title: string
+  role: MemberRole
+  invited_by?: Person
 }
