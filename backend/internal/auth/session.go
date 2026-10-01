@@ -22,9 +22,12 @@ func GenerateSessionToken() (string, error) {
 	return GenerateRandomToken(32)
 }
 
+// randRead is swapped in tests to simulate entropy failures.
+var randRead = rand.Read
+
 func GenerateRandomToken(bytes int) (string, error) {
 	b := make([]byte, bytes)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := randRead(b); err != nil {
 		slog.Error("Unable to generate random token", "error", err)
 		return "", err
 	}

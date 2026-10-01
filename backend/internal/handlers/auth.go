@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
@@ -19,6 +17,9 @@ type AuthHandler struct {
 	DB   *gorm.DB
 	cfg  *config.Config
 	user *auth.UserAuthService
+
+	// newState generates the OAuth CSRF state; overridable in tests.
+	newState func() (string, error)
 }
 
 func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
@@ -26,21 +27,16 @@ func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
 		DB:   db,
 		cfg:  cfg,
 		user: auth.NewUserAuthService(db),
+		newState: func() (string, error) {
+			return auth.GenerateRandomToken(32)
+		},
 	}
-}
-
-func generateRandomToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 	logger := logging.FromContext(c.Request.Context())
 
-	state, err := auth.GenerateRandomToken(32)
+	state, err := h.newState()
 	if err != nil {
 		logger.Error("failed to generate oauth state", "error", err)
 		RespondError(c, http.StatusInternalServerError, "internal_error", "Internal error")

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -84,38 +83,6 @@ func withHijackedHTTPClient(ctx context.Context, testServerURL string) context.C
 	}
 	client := &http.Client{Transport: &redirectingTransport{target: u}}
 	return context.WithValue(ctx, oauth2.HTTPClient, client)
-}
-
-// ---- generateRandomToken ---------------------------------------------------
-
-func TestGenerateRandomToken(t *testing.T) {
-	t.Run("returns a 32-byte URL-safe base64 token", func(t *testing.T) {
-		token, err := generateRandomToken()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		decoded, err := base64.RawURLEncoding.DecodeString(token)
-		if err != nil {
-			t.Fatalf("token is not valid RawURLEncoding base64: %v", err)
-		}
-		if len(decoded) != 32 {
-			t.Errorf("expected 32 decoded bytes, got %d", len(decoded))
-		}
-	})
-
-	t.Run("generates unique tokens", func(t *testing.T) {
-		a, err := generateRandomToken()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		b, err := generateRandomToken()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if a == b {
-			t.Error("expected two calls to produce different tokens")
-		}
-	})
 }
 
 // ---- HandleGoogleLogin ------------------------------------------------------

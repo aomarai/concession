@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -66,15 +68,6 @@ func initDB(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func setupDB(cfg *config.Config, logger *slog.Logger) *gorm.DB {
-	db, err := initDB(cfg)
-	if err != nil {
-		logger.Error("Failed to initialize database", "error", err)
-		os.Exit(1)
-	}
-	return db
-}
-
 func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) *gin.Engine {
 	// Use gin.New() instead of gin.Default() to avoid Gin's built-in logger
 	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
@@ -101,18 +94,39 @@ func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHand
 	return r
 }
 
+// shutdownTimeout bounds how long in-flight requests get to finish on shutdown.
+var shutdownTimeout = 30 * time.Second
+
 func main() {
+	os.Exit(execute(nil))
+}
+
+// execute runs the server until SIGINT/SIGTERM and returns the process exit code.
+func execute(ready func(net.Addr)) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	if err := run(ctx, ready); err != nil {
+		slog.Error("server failed", "error", err)
+		return 1
+	}
+	return 0
+}
+
+// run wires up config, database, and routes, then serves until ctx is
+// cancelled. If ready is non-nil it is called with the listening address once
+// the server is accepting connections (used by tests with PORT=0).
+func run(ctx context.Context, ready func(net.Addr)) error {
 	cfg, err := config.Load(ctx)
 	if err != nil {
-		slog.Error("Failed to load configuration", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load configuration: %w", err)
 	}
 
 	logger := logging.NewLogger(cfg)
-	db := setupDB(cfg, logger)
+	db, err := initDB(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
@@ -122,30 +136,30 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-
-	logger.Info("HTTP server starting", "port", port)
-
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: engine,
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
 	}
+	logger.Info("HTTP server starting", "addr", ln.Addr().String())
+	if ready != nil {
+		ready(ln.Addr())
+	}
+
+	server := &http.Server{Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 
 	// Graceful shutdown: use Shutdown() so in-flight requests can complete
 	// before the server exits, reducing client-visible errors on deployment.
+	shutdownErr := make(chan error, 1)
 	go func() {
 		<-ctx.Done()
 		logger.Info("shutting down server")
-
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.Error("server shutdown error", "error", err)
-		}
+		shutdownErr <- server.Shutdown(shutdownCtx)
 	}()
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Error("HTTP server stopped", "error", err)
-		os.Exit(1)
+	if err := server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve: %w", err)
 	}
+	return <-shutdownErr
 }

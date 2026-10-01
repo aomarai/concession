@@ -18,7 +18,9 @@ concession/
 │       ├── config/         # Env config (go-envconfig), OAuth config
 │       ├── domain/         # GORM models + cascade delete helpers
 │       ├── handlers/       # Gin handlers and middleware (auth, CORS, health, errors)
-│       └── logging/        # slog JSON logger + request middleware
+│       ├── logging/        # slog JSON logger + request middleware
+│       └── testutil/       # Shared test helpers (in-memory DB, failure injection)
+├── docs/                   # API.md (endpoint reference), DEVELOPMENT.md (setup, testing, coverage)
 └── frontend/               # Vite + React + TS + Tailwind + React Query (Phase 5)
 ```
 
@@ -32,7 +34,9 @@ concession/
 - Titles: movies are keyed by TMDB ID; shows are keyed by TVDB ID (`Show.TVDBID`, with `Show.TMDBID` stored for TMDB lookups). Metadata comes from TMDB; TVDB IDs are read from TMDB `external_ids`.
 - `WatchlistItem` must reference exactly one of movie/show matching `ItemType` (enforced in `BeforeSave`).
 - Login is Google OAuth only (no passwords).
-- Tests: `cd backend && go vet ./... && go test ./...`. Use the in-memory SQLite helpers; never call real external APIs in tests (use `httptest` servers).
+- Tests: `cd backend && go vet ./... && go test ./...`. Use `testutil.NewDB` (in-memory SQLite); never call real external APIs in tests (use `httptest` servers). Test DB failure paths with `testutil.FailOn`.
+- **Coverage:** aim for 100% of statements. `backend/scripts/coverage.sh` enforces the ratchet in `backend/.coverage-threshold`; raise it when coverage improves, never lower it. Make error paths testable (inject dependencies / package vars) rather than leaving them uncovered.
+- **Docs:** every change that adds or alters an endpoint, config variable, or workflow updates `docs/API.md`, `docs/DEVELOPMENT.md`, `backend/.env.example`, and this file in the same PR.
 - Format with `gofmt`; CI rejects unformatted code.
 
 ## Configuration
