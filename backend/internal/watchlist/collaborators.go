@@ -3,21 +3,17 @@ package watchlist
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/svcerr"
+	"github.com/aomarai/concession/internal/userref"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // Person is the public part of a user's profile (never their email).
-type Person struct {
-	ID          uuid.UUID `json:"id"`
-	DisplayName string    `json:"display_name"`
-	AvatarURL   string    `json:"avatar_url,omitempty"`
-}
+type Person = domain.PublicUser
 
 // Member is a user's membership of a watchlist.
 type Member struct {
@@ -49,43 +45,6 @@ func validInviteRole(r domain.CollaboratorRole) bool {
 	return r == domain.RoleEditor || r == domain.RoleViewer
 }
 
-func (s *Service) people(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]Person, error) {
-	out := make(map[uuid.UUID]Person, len(ids))
-	if len(ids) == 0 {
-		return out, nil
-	}
-	var users []domain.User
-	if err := s.DB.WithContext(ctx).Select("id", "display_name", "avatar_url").Where("id IN ?", ids).Find(&users).Error; err != nil {
-		return nil, err
-	}
-	for _, u := range users {
-		out[u.ID] = Person{ID: u.ID, DisplayName: u.DisplayName, AvatarURL: u.AvatarURL}
-	}
-	return out, nil
-}
-
-// person falls back to a bare ID for accounts that no longer exist.
-func person(people map[uuid.UUID]Person, id uuid.UUID) Person {
-	if p, ok := people[id]; ok {
-		return p
-	}
-	return Person{ID: id}
-}
-
-// findUser resolves an invitee by exact username or e-mail (case-insensitive).
-func (s *Service) findUser(ctx context.Context, identifier string) (domain.User, error) {
-	var u domain.User
-	identifier = strings.TrimSpace(identifier)
-	if identifier == "" {
-		return u, svcerr.Invalid("user is required")
-	}
-	err := s.DB.WithContext(ctx).Where("username = ? OR LOWER(email) = LOWER(?)", identifier, identifier).First(&u).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return u, svcerr.NotFound("No user found with that username or email")
-	}
-	return u, err
-}
-
 // ListMembers returns the list's owner and collaborators. Any role may view
 // it, except that only the owner sees pending invitations.
 func (s *Service) ListMembers(ctx context.Context, userID, id uuid.UUID) (*Members, error) {
@@ -101,17 +60,17 @@ func (s *Service) ListMembers(ctx context.Context, userID, id uuid.UUID) (*Membe
 	for _, c := range rows {
 		ids = append(ids, c.UserID)
 	}
-	people, err := s.people(ctx, ids)
+	people, err := domain.LoadPublicUsers(ctx, s.DB, ids)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &Members{
-		Owner:   Member{Person: person(people, w.OwnerID), Role: domain.RoleOwner, Status: domain.CollaboratorAccepted},
+		Owner:   Member{Person: domain.PublicUserOrID(people, w.OwnerID), Role: domain.RoleOwner, Status: domain.CollaboratorAccepted},
 		Members: []Member{},
 	}
 	for _, c := range rows {
-		m := Member{Person: person(people, c.UserID), Role: c.Role, Status: c.Status}
+		m := Member{Person: domain.PublicUserOrID(people, c.UserID), Role: c.Role, Status: c.Status}
 		if !c.JoinedAt.IsZero() {
 			joined := c.JoinedAt
 			m.JoinedAt = &joined
@@ -126,10 +85,10 @@ func (s *Service) ListMembers(ctx context.Context, userID, id uuid.UUID) (*Membe
 	return out, nil
 }
 
-// InviteUser invites a user (by username or e-mail) to collaborate as an
+// InviteUser invites a user (by username, e-mail or ID) to collaborate as an
 // editor or viewer. Owner only. The invitation must be accepted before it
 // grants access.
-func (s *Service) InviteUser(ctx context.Context, ownerID, id uuid.UUID, identifier string, role domain.CollaboratorRole) (*Member, error) {
+func (s *Service) InviteUser(ctx context.Context, ownerID, id uuid.UUID, ref userref.Ref, role domain.CollaboratorRole) (*Member, error) {
 	w, myRole, err := s.access(ctx, ownerID, id)
 	if err != nil {
 		return nil, err
@@ -140,7 +99,7 @@ func (s *Service) InviteUser(ctx context.Context, ownerID, id uuid.UUID, identif
 	if !validInviteRole(role) {
 		return nil, svcerr.Invalid("role must be editor or viewer")
 	}
-	target, err := s.findUser(ctx, identifier)
+	target, err := userref.Resolve(ctx, s.DB, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +124,7 @@ func (s *Service) InviteUser(ctx context.Context, ownerID, id uuid.UUID, identif
 	if err := db.Omit("User", "Watchlist").Create(&c).Error; err != nil {
 		return nil, err
 	}
+	s.notify(ctx, target.ID, ownerID, domain.NotificationWatchlistInvite, w.Title, "/invites")
 	return &Member{
 		Person: Person{ID: target.ID, DisplayName: target.DisplayName, AvatarURL: target.AvatarURL},
 		Role:   role, Status: domain.CollaboratorPending,
@@ -253,14 +213,14 @@ func (s *Service) ListInvites(ctx context.Context, userID uuid.UUID) ([]Invite, 
 	for _, l := range lists {
 		titles[l.ID] = l.Title
 	}
-	people, err := s.people(ctx, inviters)
+	people, err := domain.LoadPublicUsers(ctx, s.DB, inviters)
 	if err != nil {
 		return nil, err
 	}
 	for _, c := range rows {
 		inv := Invite{ID: c.ID, WatchlistID: c.WatchlistID, WatchlistName: titles[c.WatchlistID], Role: c.Role, CreatedAt: c.CreatedAt}
 		if c.InvitedBy != nil {
-			p := person(people, *c.InvitedBy)
+			p := domain.PublicUserOrID(people, *c.InvitedBy)
 			inv.InvitedBy = &p
 		}
 		out = append(out, inv)
@@ -284,8 +244,18 @@ func (s *Service) AcceptInvite(ctx context.Context, userID, inviteID uuid.UUID) 
 	if err != nil {
 		return err
 	}
-	return s.DB.WithContext(ctx).Model(&domain.Collaborator{}).Where("id = ?", c.ID).
+	err = s.DB.WithContext(ctx).Model(&domain.Collaborator{}).Where("id = ?", c.ID).
 		Updates(map[string]any{"status": domain.CollaboratorAccepted, "joined_at": time.Now()}).Error
+	if err != nil {
+		return err
+	}
+	if c.InvitedBy != nil {
+		var w domain.Watchlist
+		// Best effort: a missing title only makes the message less specific.
+		_ = s.DB.WithContext(ctx).Select("id", "title").First(&w, "id = ?", c.WatchlistID).Error
+		s.notify(ctx, *c.InvitedBy, userID, domain.NotificationInviteAccepted, w.Title, "/watchlists/"+c.WatchlistID.String())
+	}
+	return nil
 }
 
 // DeclineInvite deletes a pending invitation.

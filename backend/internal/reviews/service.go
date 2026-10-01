@@ -14,6 +14,7 @@ import (
 
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/keyedlock"
+	"github.com/aomarai/concession/internal/paging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -26,11 +27,9 @@ const (
 	maxTitleLen   = 200
 	maxContentLen = 10000
 
-	DefaultPerPage = 20
-	MaxPerPage     = 100
-	// MaxPage bounds the page number so (page-1)*perPage cannot overflow into
-	// a negative OFFSET, which the database would reject with a 500.
-	MaxPage = 1_000_000
+	DefaultPerPage = paging.DefaultPerPage
+	MaxPerPage     = paging.MaxPerPage
+	MaxPage        = paging.MaxPage
 )
 
 // Catalog resolves TMDB IDs to stored titles; *catalog.Service implements it.
@@ -51,11 +50,7 @@ func NewService(db *gorm.DB, catalog Catalog) *Service {
 }
 
 // Author is the public part of a reviewer's profile (never their email).
-type Author struct {
-	ID          uuid.UUID `json:"id"`
-	DisplayName string    `json:"display_name"`
-	AvatarURL   string    `json:"avatar_url,omitempty"`
-}
+type Author = domain.PublicUser
 
 // View is a review as returned by the API. Movie or Show is set when the
 // review is listed outside its title's own page.
@@ -117,23 +112,6 @@ func validText(title, content string) (string, string, error) {
 		return "", "", svcerr.Invalid("review text is too long")
 	}
 	return title, content, nil
-}
-
-// normalizePage applies defaults (0 means "unset") and limits.
-func normalizePage(page, perPage int) (int, int, error) {
-	if page == 0 {
-		page = 1
-	}
-	if perPage == 0 {
-		perPage = DefaultPerPage
-	}
-	if page < 1 || perPage < 1 {
-		return 0, 0, svcerr.Invalid("page and per_page must be positive")
-	}
-	if page > MaxPage {
-		return 0, 0, svcerr.Invalid("page is too large")
-	}
-	return page, min(perPage, MaxPerPage), nil
 }
 
 func itemType(kind domain.ReviewableItem) domain.ItemType { return domain.ItemType(kind) }
@@ -266,7 +244,7 @@ func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
 // ListForTitle returns a page of reviews for a stored title with its rating
 // summary. A title that was never stored simply has no reviews.
 func (s *Service) ListForTitle(ctx context.Context, kind domain.ReviewableItem, tmdbID int64, page, perPage int) (*Page, error) {
-	page, perPage, err := normalizePage(page, perPage)
+	page, perPage, err := paging.Normalize(page, perPage)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +276,7 @@ func (s *Service) ListForTitle(ctx context.Context, kind domain.ReviewableItem, 
 
 	var rows []domain.Review
 	if err := db.Where(where, kind, itemID).Order("created_at DESC, id").
-		Limit(perPage).Offset((page - 1) * perPage).Find(&rows).Error; err != nil {
+		Limit(perPage).Offset(paging.Offset(page, perPage)).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	if out.Reviews, err = s.views(ctx, rows, false); err != nil {
@@ -309,7 +287,7 @@ func (s *Service) ListForTitle(ctx context.Context, kind domain.ReviewableItem, 
 
 // ListMine returns a page of the caller's own reviews with their titles.
 func (s *Service) ListMine(ctx context.Context, userID uuid.UUID, page, perPage int) (*Page, error) {
-	page, perPage, err := normalizePage(page, perPage)
+	page, perPage, err := paging.Normalize(page, perPage)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +298,7 @@ func (s *Service) ListMine(ctx context.Context, userID uuid.UUID, page, perPage 
 	}
 	var rows []domain.Review
 	if err := db.Where("user_id = ?", userID).Order("created_at DESC, id").
-		Limit(perPage).Offset((page - 1) * perPage).Find(&rows).Error; err != nil {
+		Limit(perPage).Offset(paging.Offset(page, perPage)).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	if out.Reviews, err = s.views(ctx, rows, true); err != nil {
@@ -332,8 +310,6 @@ func (s *Service) ListMine(ctx context.Context, userID uuid.UUID, page, perPage 
 // views converts rows to API views, attaching authors and, if withTitles,
 // the reviewed movie or show.
 func (s *Service) views(ctx context.Context, rows []domain.Review, withTitles bool) ([]View, error) {
-	db := s.DB.WithContext(ctx)
-
 	userIDs := make([]uuid.UUID, 0, len(rows))
 	var movieIDs, showIDs []uint64
 	for _, r := range rows {
@@ -344,20 +320,13 @@ func (s *Service) views(ctx context.Context, rows []domain.Review, withTitles bo
 			showIDs = append(showIDs, r.ReviewableID)
 		}
 	}
-	authors := make(map[uuid.UUID]Author, len(rows))
-	if len(userIDs) > 0 {
-		var users []domain.User
-		if err := db.Select("id", "display_name", "avatar_url").Where("id IN ?", userIDs).Find(&users).Error; err != nil {
-			return nil, err
-		}
-		for _, u := range users {
-			authors[u.ID] = Author{ID: u.ID, DisplayName: u.DisplayName, AvatarURL: u.AvatarURL}
-		}
+	authors, err := domain.LoadPublicUsers(ctx, s.DB, userIDs)
+	if err != nil {
+		return nil, err
 	}
 	var movies map[uint64]*domain.Movie
 	var shows map[uint64]*domain.Show
 	if withTitles {
-		var err error
 		if movies, shows, err = domain.LoadTitles(ctx, s.DB, movieIDs, showIDs); err != nil {
 			return nil, err
 		}
@@ -368,10 +337,7 @@ func (s *Service) views(ctx context.Context, rows []domain.Review, withTitles bo
 		out[i] = View{
 			ID: r.ID, ItemType: r.ReviewableType, ItemID: r.ReviewableID, Rating: int(r.Rating),
 			Title: r.Title, Content: r.Content, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-			Author: authors[r.UserID],
-		}
-		if out[i].Author.ID == uuid.Nil {
-			out[i].Author.ID = r.UserID // author account no longer exists
+			Author: domain.PublicUserOrID(authors, r.UserID), // bare ID if the account no longer exists
 		}
 		if r.ReviewableType == domain.ReviewableMovies {
 			out[i].Movie = movies[r.ReviewableID]

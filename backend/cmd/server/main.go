@@ -15,8 +15,10 @@ import (
 	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/friends"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/notifications"
 	"github.com/aomarai/concession/internal/progress"
 	"github.com/aomarai/concession/internal/reviews"
 	"github.com/aomarai/concession/internal/tmdb"
@@ -66,6 +68,8 @@ type apiHandlers struct {
 	Collab    *handlers.CollaborationHandler
 	Progress  *handlers.ProgressHandler
 	Reviews   *handlers.ReviewHandler
+	Notifs    *handlers.NotificationHandler
+	Friends   *handlers.FriendHandler
 }
 
 func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Logger) *gin.Engine {
@@ -107,6 +111,8 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 	h.Collab.RegisterRoutes(auth)
 	h.Progress.RegisterRoutes(auth)
 	h.Reviews.RegisterRoutes(auth)
+	h.Notifs.RegisterRoutes(auth)
+	h.Friends.RegisterRoutes(auth)
 
 	return r
 }
@@ -128,6 +134,7 @@ func migrate(db *gorm.DB) error {
 		&domain.UserWatchProgress{},
 		&domain.Session{},
 		&domain.Notification{},
+		&domain.Friendship{},
 	)
 	if err != nil {
 		return err
@@ -211,7 +218,11 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 			}
 		}()
 	}
+	notificationSvc := notifications.NewService(db)
 	watchlistSvc := watchlist.NewService(db, catalogSvc)
+	watchlistSvc.Notifier = notificationSvc
+	friendSvc := friends.NewService(db)
+	friendSvc.Notifier = notificationSvc
 	engine := setupRouter(db, cfg, apiHandlers{
 		Auth:      authHandler,
 		User:      userHandler,
@@ -220,6 +231,8 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 		Collab:    handlers.NewCollaborationHandler(watchlistSvc),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
+		Notifs:    handlers.NewNotificationHandler(notificationSvc),
+		Friends:   handlers.NewFriendHandler(friendSvc),
 	}, logger)
 
 	port := cfg.Port

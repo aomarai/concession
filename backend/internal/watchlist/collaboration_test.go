@@ -8,6 +8,7 @@ import (
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/testutil"
+	"github.com/aomarai/concession/internal/userref"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +36,7 @@ func TestInviteAcceptFlow(t *testing.T) {
 	list := e.newList(t, domain.WatchlistTypeMovie)
 	ann := e.account(t, "ann")
 
-	m, err := e.svc.InviteUser(ctx, e.owner, list, "  ANN@example.com ", domain.RoleEditor)
+	m, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "  ANN@example.com "}, domain.RoleEditor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func TestInviteValidation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := e.svc.InviteUser(ctx, tc.actor, list, tc.user, tc.role)
+			_, err := e.svc.InviteUser(ctx, tc.actor, list, userref.Ref{Identifier: tc.user}, tc.role)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("got %v", err)
 			}
@@ -121,10 +122,10 @@ func TestInviteValidation(t *testing.T) {
 	}
 
 	t.Run("duplicates", func(t *testing.T) {
-		if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleViewer); err != nil {
+		if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleViewer); err != nil {
 			t.Fatal(err)
 		}
-		_, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleEditor)
+		_, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleEditor)
 		if !errors.Is(err, svcerr.ErrDuplicate) || !strings.Contains(svcerr.MessageOr(err, ""), "already been invited") {
 			t.Errorf("re-invite: %v", err)
 		}
@@ -132,11 +133,11 @@ func TestInviteValidation(t *testing.T) {
 		if err := e.svc.AcceptInvite(ctx, ann, invites[0].ID); err != nil {
 			t.Fatal(err)
 		}
-		_, err = e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleEditor)
+		_, err = e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleEditor)
 		if !errors.Is(err, svcerr.ErrDuplicate) || !strings.Contains(svcerr.MessageOr(err, ""), "already collaborates") {
 			t.Errorf("invite existing member: %v", err)
 		}
-		if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleViewer); !errors.Is(err, svcerr.ErrDuplicate) {
+		if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleViewer); !errors.Is(err, svcerr.ErrDuplicate) {
 			t.Errorf("existing collaborators found by row, not by who invited: %v", err)
 		}
 	})
@@ -147,10 +148,10 @@ func TestInviteMatchesUsernameOrEmail(t *testing.T) {
 	list := e.newList(t, domain.WatchlistTypeMovie)
 	e.account(t, "ann")
 	e.account(t, "bob")
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleViewer); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleViewer); err != nil {
 		t.Errorf("by username: %v", err)
 	}
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "BOB@example.COM", domain.RoleViewer); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "BOB@example.COM"}, domain.RoleViewer); err != nil {
 		t.Errorf("by e-mail, any case: %v", err)
 	}
 }
@@ -169,7 +170,7 @@ func TestConcurrentInvitesCreateOneInvitation(t *testing.T) {
 	results := make(chan error, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			_, err := svc.InviteUser(ctx, owner, w.ID, "ann", domain.RoleViewer)
+			_, err := svc.InviteUser(ctx, owner, w.ID, userref.Ref{Identifier: "ann"}, domain.RoleViewer)
 			results <- err
 		}()
 	}
@@ -193,7 +194,7 @@ func TestDeclineAndWrongRecipient(t *testing.T) {
 	e := newEnv(t)
 	list := e.newList(t, domain.WatchlistTypeMovie)
 	ann, bob := e.account(t, "ann"), e.account(t, "bob")
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleViewer); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleViewer); err != nil {
 		t.Fatal(err)
 	}
 	invites, _ := e.svc.ListInvites(ctx, ann)
@@ -215,7 +216,7 @@ func TestDeclineAndWrongRecipient(t *testing.T) {
 		t.Errorf("second decline: %v", err)
 	}
 	// Declining is permanent, so the owner can invite again.
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleEditor); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleEditor); err != nil {
 		t.Errorf("re-invite after decline: %v", err)
 	}
 }
@@ -226,10 +227,10 @@ func TestListMembers(t *testing.T) {
 	list := e.newList(t, domain.WatchlistTypeMovie)
 	ann, bob := e.account(t, "ann"), e.account(t, "bob")
 	e.account(t, "cy")
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleEditor); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleEditor); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "bob", domain.RoleViewer); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "bob"}, domain.RoleViewer); err != nil {
 		t.Fatal(err)
 	}
 	invites, _ := e.svc.ListInvites(ctx, ann)
@@ -330,7 +331,7 @@ func TestRemoveMember(t *testing.T) {
 	}
 	// Permanent removal: the same person can be invited again.
 	e.account(t, "ann2")
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann2", domain.RoleViewer); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann2"}, domain.RoleViewer); err != nil {
 		t.Fatal(err)
 	}
 	invites, _ := e.svc.ListInvites(ctx, mustUser(t, e, "ann2"))
@@ -343,7 +344,7 @@ func TestRemoveMember(t *testing.T) {
 	if invites, _ := e.svc.ListInvites(ctx, mustUser(t, e, "ann2")); len(invites) != 0 {
 		t.Errorf("cancelled invite lingers: %+v", invites)
 	}
-	if _, err := e.svc.InviteUser(ctx, e.owner, list, "ann2", domain.RoleViewer); err != nil {
+	if _, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann2"}, domain.RoleViewer); err != nil {
 		t.Errorf("re-invite after removal: %v", err)
 	}
 
@@ -489,7 +490,7 @@ func TestCollaborationDBFailures(t *testing.T) {
 	}
 	type call func(e *env, list, ann uuid.UUID) error
 	invite := func(e *env, list, ann uuid.UUID) error {
-		_, err := e.svc.InviteUser(ctx, e.owner, list, "ann", domain.RoleViewer)
+		_, err := e.svc.InviteUser(ctx, e.owner, list, userref.Ref{Identifier: "ann"}, domain.RoleViewer)
 		return err
 	}
 	members := func(e *env, list, ann uuid.UUID) error { _, err := e.svc.ListMembers(ctx, e.owner, list); return err }

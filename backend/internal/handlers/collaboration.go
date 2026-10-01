@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/userref"
 	"github.com/aomarai/concession/internal/watchlist"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -60,13 +61,14 @@ func (h *CollaborationHandler) Invite(c *gin.Context) {
 		return
 	}
 	var req struct {
-		User string                  `json:"user"`
-		Role domain.CollaboratorRole `json:"role"`
+		User   string                  `json:"user"`    // username or e-mail
+		UserID uuid.UUID               `json:"user_id"` // alternative: a user ID, e.g. from the friends list
+		Role   domain.CollaboratorRole `json:"role"`
 	}
 	if !bindJSON(c, &req) {
 		return
 	}
-	m, err := h.svc.InviteUser(c.Request.Context(), userID, id, req.User, req.Role)
+	m, err := h.svc.InviteUser(c.Request.Context(), userID, id, userref.Ref{Identifier: req.User, ID: req.UserID}, req.Role)
 	if err != nil {
 		RespondServiceError(c, err)
 		return

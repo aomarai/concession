@@ -13,6 +13,8 @@ import (
 
 	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/friends"
+	"github.com/aomarai/concession/internal/notifications"
 	"github.com/aomarai/concession/internal/progress"
 	"github.com/aomarai/concession/internal/reviews"
 	"github.com/aomarai/concession/internal/svcerr"
@@ -67,7 +69,8 @@ func newAPI(t *testing.T) *api {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db := testutil.NewDB(t, &domain.User{}, &domain.Movie{}, &domain.Show{}, &domain.Genre{}, &domain.Review{},
-		&domain.Watchlist{}, &domain.WatchlistItem{}, &domain.Collaborator{}, &domain.UserWatchProgress{})
+		&domain.Watchlist{}, &domain.WatchlistItem{}, &domain.Collaborator{}, &domain.UserWatchProgress{},
+		&domain.Notification{}, &domain.Friendship{})
 	cat := fakeCatalog{db}
 	r := gin.New()
 	g := r.Group("/api/v1", func(c *gin.Context) {
@@ -76,7 +79,13 @@ func newAPI(t *testing.T) *api {
 			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), userIDKey, id))
 		}
 	})
+	notifs := notifications.NewService(db)
 	wl := watchlist.NewService(db, cat)
+	wl.Notifier = notifs
+	fs := friends.NewService(db)
+	fs.Notifier = notifs
+	NewNotificationHandler(notifs).RegisterRoutes(g)
+	NewFriendHandler(fs).RegisterRoutes(g)
 	NewWatchlistHandler(wl).RegisterRoutes(g)
 	NewCollaborationHandler(wl).RegisterRoutes(g)
 	NewProgressHandler(progress.NewService(db, cat)).RegisterRoutes(g)
