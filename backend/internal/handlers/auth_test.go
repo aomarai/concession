@@ -30,6 +30,11 @@ func setupAuthHandlerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open in-memory sqlite db: %v", err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close() // drops the named in-memory DB so -count=N reruns start clean
+		}
+	})
 	if err := db.AutoMigrate(&domain.User{}, &domain.OAuthAccount{}, &domain.Session{}); err != nil {
 		t.Fatalf("failed to migrate models: %v", err)
 	}

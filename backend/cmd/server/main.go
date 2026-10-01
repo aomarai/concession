@@ -116,6 +116,13 @@ func execute(ready func(net.Addr)) int {
 	return 0
 }
 
+// closeDB releases the database connection pool on shutdown.
+func closeDB(db *gorm.DB) {
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+}
+
 // run wires up config, database, and routes, then serves until ctx is
 // cancelled. If ready is non-nil it is called with the listening address once
 // the server is accepting connections (used by tests with PORT=0).
@@ -130,6 +137,7 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 	if err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
+	defer closeDB(db)
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)

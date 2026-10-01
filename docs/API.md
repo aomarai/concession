@@ -30,7 +30,9 @@ Codes in use: `bad_request` (400), `unauthorized` (401), `not_found` (404), `int
 
 - Titles are fetched from TMDB on first request and stored locally; later requests are served from the database. A stored title older than 24 hours is refreshed, and if TMDB is unreachable the stored copy is served instead.
 - The returned `id` is the internal ID used by watchlists and reviews; `tmdb_id` is the TMDB ID used in these URLs.
-- Movies are keyed by TMDB ID. Shows are keyed by TVDB ID (`tvdb_id`), read from TMDB's external IDs; it is `null` for the few shows TMDB has no TVDB ID for.
+- Both movies and shows are addressed by TMDB ID in URLs (`tmdb_id`). Shows also carry a `tvdb_id`, read from TMDB's external IDs and stored as a unique, optional external key; it is `null` for the few shows TMDB has no TVDB ID for.
+- Refreshing a show or season also removes seasons and episodes TMDB no longer lists (an empty TMDB answer removes nothing). A season is served from the stored copy if TMDB is unreachable.
+- Concurrent requests for the same title are serialized per process, so a title is fetched and stored once.
 - TMDB lookup failures: `404 not_found` when TMDB has no such title, `502 upstream_error` for any other TMDB problem.
 
 ## CORS

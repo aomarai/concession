@@ -347,6 +347,7 @@ func TestRunEndToEndWithTMDB(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer closeDB(db)
 			user := domain.User{Username: "e2e", Email: "e2e@example.com", DisplayName: "E2E"}
 			if err := db.Create(&user).Error; err != nil {
 				t.Fatal(err)

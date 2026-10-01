@@ -89,7 +89,7 @@ type Show struct {
 	ContentRating string                      `json:"content_rating"`
 	IMDBID        string                      `json:"imdb_id" gorm:"index"`
 	TVDBID        *int64                      `json:"tvdb_id,omitempty" gorm:"uniqueIndex"` // nullable: TMDB does not know the TVDB ID of every show
-	TMDBID        *int64                      `json:"tmdb_id,omitempty" gorm:"uniqueIndex"` // TMDB is the metadata source; TVDB ID is the canonical key
+	TMDBID        *int64                      `json:"tmdb_id,omitempty" gorm:"uniqueIndex"` // lookup key for the TMDB-sourced metadata; TVDBID is the show's TVDB external key
 	Overview      string                      `json:"overview"`
 	CreatedAt     time.Time                   `json:"created_at"`
 	UpdatedAt     time.Time                   `json:"updated_at"`

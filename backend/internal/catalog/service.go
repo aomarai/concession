@@ -5,7 +5,9 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aomarai/concession/internal/domain"
@@ -22,6 +24,47 @@ const maxActors = 10
 type Service struct {
 	DB   *gorm.DB
 	TMDB *tmdb.Client
+
+	locks keyedLocks
+}
+
+// keyedLocks serializes work per key so concurrent requests for the same
+// title do a single fetch-and-store instead of racing on the unique indexes
+// (or creating duplicate season/episode rows). Entries are reference-counted
+// and removed when idle.
+type keyedLocks struct {
+	mu sync.Mutex
+	m  map[string]*keyedLock
+}
+
+type keyedLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lock blocks until the key is free and returns the function that releases it.
+func (k *keyedLocks) lock(key string) (unlock func()) {
+	k.mu.Lock()
+	if k.m == nil {
+		k.m = make(map[string]*keyedLock)
+	}
+	l, ok := k.m[key]
+	if !ok {
+		l = &keyedLock{}
+		k.m[key] = l
+	}
+	l.refs++
+	k.mu.Unlock()
+
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		k.mu.Lock()
+		if l.refs--; l.refs == 0 {
+			delete(k.m, key)
+		}
+		k.mu.Unlock()
+	}
 }
 
 func NewService(db *gorm.DB, client *tmdb.Client) *Service {
@@ -86,6 +129,7 @@ func (s *Service) SyncGenres(ctx context.Context) error {
 // EnsureMovie returns the movie with the given TMDB ID, fetching and storing
 // it if it is missing or stale.
 func (s *Service) EnsureMovie(ctx context.Context, tmdbID int64) (*domain.Movie, error) {
+	defer s.locks.lock(fmt.Sprintf("movie:%d", tmdbID))()
 	db := s.DB.WithContext(ctx)
 
 	var existing domain.Movie
@@ -146,6 +190,7 @@ func (s *Service) EnsureMovie(ctx context.Context, tmdbID int64) (*domain.Movie,
 // (with season summaries) if it is missing or stale. The TVDB ID is taken from
 // TMDB's external IDs.
 func (s *Service) EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, error) {
+	defer s.locks.lock(fmt.Sprintf("show:%d", tmdbID))()
 	db := s.DB.WithContext(ctx)
 
 	var existing domain.Show
@@ -191,12 +236,14 @@ func (s *Service) EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, e
 		if err := tx.Model(&show).Association("Genres").Replace(genres); err != nil {
 			return err
 		}
+		numbers := make([]int, 0, len(remote.Seasons))
 		for _, rs := range remote.Seasons {
 			if _, err := upsertSeason(tx, show.ID, rs.SeasonNumber, rs.Name, rs.Overview, rs.PosterPath, rs.AirDate); err != nil {
 				return err
 			}
+			numbers = append(numbers, rs.SeasonNumber)
 		}
-		return nil
+		return pruneSeasons(tx, show.ID, numbers)
 	})
 	if err != nil {
 		return nil, err
@@ -209,6 +256,37 @@ func (s *Service) EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, e
 		return nil, err
 	}
 	return &out, nil
+}
+
+// pruneSeasons soft-deletes stored seasons (and their episodes) that TMDB no
+// longer lists for the show. An empty list is treated as a TMDB glitch and
+// prunes nothing.
+func pruneSeasons(tx *gorm.DB, showID uint64, keep []int) error {
+	if len(keep) == 0 {
+		return nil
+	}
+	var stale []uint64
+	if err := tx.Model(&domain.Season{}).
+		Where("show_id = ? AND season_number NOT IN ?", showID, keep).
+		Pluck("id", &stale).Error; err != nil || len(stale) == 0 {
+		return err
+	}
+	if err := tx.Where("season_id IN ?", stale).Delete(&domain.Episode{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("id IN ?", stale).Delete(&domain.Season{}).Error
+}
+
+// storedSeason returns a locally stored season that has episodes, if any.
+func storedSeason(ctx context.Context, db *gorm.DB, showID uint64, number int) (*domain.Season, bool) {
+	var season domain.Season
+	err := db.WithContext(ctx).Preload("Episodes", func(d *gorm.DB) *gorm.DB {
+		return d.Order("episode_number")
+	}).Where("show_id = ? AND season_number = ?", showID, number).First(&season).Error
+	if err != nil || len(season.Episodes) == 0 {
+		return nil, false
+	}
+	return &season, true
 }
 
 func upsertSeason(tx *gorm.DB, showID uint64, number int, title, overview, poster, airDate string) (domain.Season, error) {
@@ -233,8 +311,14 @@ func (s *Service) EnsureSeason(ctx context.Context, showTMDBID int64, number int
 	if err != nil {
 		return nil, err
 	}
+	defer s.locks.lock(fmt.Sprintf("season:%d:%d", showTMDBID, number))()
 	remote, err := s.TMDB.GetSeason(ctx, showTMDBID, number)
 	if err != nil {
+		if !errors.Is(err, tmdb.ErrNotFound) {
+			if stored, ok := storedSeason(ctx, s.DB, show.ID, number); ok {
+				return stored, nil // TMDB is unavailable: serve the stored copy
+			}
+		}
 		return nil, err
 	}
 
@@ -247,7 +331,9 @@ func (s *Service) EnsureSeason(ctx context.Context, showTMDBID int64, number int
 		}
 		seasonID = season.ID
 
+		episodeNumbers := make([]int, 0, len(remote.Episodes))
 		for _, re := range remote.Episodes {
+			episodeNumbers = append(episodeNumbers, re.EpisodeNumber)
 			var ep domain.Episode
 			err := tx.Where("season_id = ? AND episode_number = ?", season.ID, re.EpisodeNumber).First(&ep).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -268,7 +354,12 @@ func (s *Service) EnsureSeason(ctx context.Context, showTMDBID int64, number int
 				return err
 			}
 		}
-		return nil
+		if len(episodeNumbers) == 0 {
+			return nil
+		}
+		// Drop episodes TMDB no longer lists for this season.
+		return tx.Where("season_id = ? AND episode_number NOT IN ?", season.ID, episodeNumbers).
+			Delete(&domain.Episode{}).Error
 	})
 	if err != nil {
 		return nil, err

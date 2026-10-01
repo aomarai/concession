@@ -162,7 +162,7 @@ func TestEnsureSeasonDBFailures(t *testing.T) {
 	runDBFailures(t, []dbFailure{
 		{"show ensure", "query", "shows", 0},
 		{"show reload", "query", "seasons", 2},
-		{"season upsert", "query", "seasons", 3},
+		{"season upsert", "query", "seasons", 4},
 		{"episode lookup", "query", "episodes", 0},
 		{"episode save", "create", "episodes", 0},
 		{"reload", "query", "episodes", 2},

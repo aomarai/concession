@@ -40,13 +40,19 @@ func newTestService(t *testing.T, hits *atomic.Int32) *Service {
 }
 
 // newUpstreamService is newTestService with per-path status overrides: store
-// an int in status under a URL path to make the fake TMDB answer with it.
+// an int (status code) or string (response body) under a URL path to override
+// the fake TMDB's answer for it.
 func newUpstreamService(t *testing.T, hits *atomic.Int32, status *sync.Map) *Service {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
-		if code, ok := status.Load(r.URL.Path); ok {
-			w.WriteHeader(code.(int))
+		if v, ok := status.Load(r.URL.Path); ok {
+			switch v := v.(type) {
+			case int:
+				w.WriteHeader(v)
+			case string: // body override
+				_, _ = w.Write([]byte(v))
+			}
 			return
 		}
 		switch {
@@ -69,6 +75,11 @@ func newUpstreamService(t *testing.T, hits *atomic.Int32, status *sync.Map) *Ser
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close() // drops the named in-memory DB so -count=N reruns start clean
+		}
+	})
 	if err := db.AutoMigrate(&domain.Movie{}, &domain.Show{}, &domain.Season{}, &domain.Episode{}, &domain.Genre{}, &domain.Review{}); err != nil {
 		t.Fatal(err)
 	}

@@ -33,7 +33,7 @@ concession/
 - Pass `c.Request.Context()` through to services/DB (`db.WithContext(ctx)`) so cancellation works.
 - Use `logging.FromContext(ctx)` for logs; log structured key/values, never secrets.
 - Models embed `domain.BaseUUID` (UUID PK, soft delete). Soft deletes do not fire FK cascades, so use the `Delete*Cascade` helpers.
-- Titles: movies are keyed by TMDB ID; shows are keyed by TVDB ID (`Show.TVDBID`, with `Show.TMDBID` stored for TMDB lookups). Metadata comes from TMDB; TVDB IDs are read from TMDB `external_ids`.
+- Titles: metadata comes from TMDB and both movies and shows are looked up by TMDB ID. Shows also store a nullable, unique `TVDBID` (read from TMDB `external_ids`) as their TVDB external key.
 - `WatchlistItem` must reference exactly one of movie/show matching `ItemType` (enforced in `BeforeSave`).
 - Login is Google OAuth only (no passwords).
 - Tests: `cd backend && go vet ./... && go test ./...`. Use `testutil.NewDB` (in-memory SQLite); never call real external APIs in tests (use `httptest` servers). Test DB failure paths with `testutil.FailOn`.

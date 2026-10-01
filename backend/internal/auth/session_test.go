@@ -31,6 +31,11 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open in-memory sqlite db: %v", err)
 	}
 
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close() // drops the named in-memory DB so -count=N reruns start clean
+		}
+	})
 	if err := db.AutoMigrate(&domain.Session{}); err != nil {
 		t.Fatalf("failed to migrate domain.Session: %v", err)
 	}

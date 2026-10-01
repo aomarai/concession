@@ -41,7 +41,7 @@ func newCatalogRouter(t *testing.T) *gin.Engine {
 	}))
 	t.Cleanup(upstream.Close)
 
-	db, err := gorm.Open(sqlite.Open("file:catalog_handler?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=private"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
