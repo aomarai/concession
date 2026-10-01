@@ -63,6 +63,21 @@ Conventions:
 
 Intentionally uncovered code (kept minimal): `main()` (a one-line `os.Exit(execute(nil))`) and the `Serve` failure branch in `run`, which cannot be triggered once the listener is bound.
 
+## Running everything in containers
+
+```sh
+cp .env.example .env      # fill in GOOGLE_CLIENT_ID/SECRET and TMDB_READ_ACCESS_TOKEN
+docker compose --profile app up --build
+```
+
+Open http://localhost:8080 (`APP_PORT` changes the port). Three services start: Postgres (`db`), the Go API (`backend`, built from `backend/Dockerfile`) and `frontend` (nginx, built from `frontend/Dockerfile`), which serves the UI and proxies `/api` and `/healthz` to the API, so the browser sees a single origin. Only the frontend port is published.
+
+- **Google OAuth:** create an OAuth client and add `http://localhost:8080/api/v1/auth/google/callback` (matching `GOOGLE_REDIRECT_URL`) as an authorized redirect URI. Without credentials the app starts but sign-in cannot complete.
+- **Cookies:** `COOKIE_SECURE=false` is for plain `http://localhost`. Behind HTTPS set it to `true` and put the public URL in `GOOGLE_REDIRECT_URL` and `CORS_ALLOWED_ORIGINS`.
+- **Reverse proxies in front of the frontend container** must not buffer `/api/` (the event streams) and should allow long reads; the bundled nginx config already does (`frontend/nginx.conf.template`, `BACKEND_URL` selects the upstream).
+- `docker compose up -d` with no profile still starts only Postgres, for running the API and frontend from source.
+- The `docker` CI job builds both images, starts the stack and smoke-tests `/healthz`, the SPA fallback and the API through the frontend container.
+
 ## Frontend
 
 ```sh

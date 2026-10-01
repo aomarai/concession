@@ -1,5 +1,9 @@
-# Local development services. Run the API with:
-#   cd backend && DB_DRIVER=postgres DB_HOST=localhost go run ./cmd/server
+# Local development: `docker compose up -d` starts only Postgres; run the API
+# and frontend from source (see docs/DEVELOPMENT.md).
+#
+# Full stack in containers (Postgres + API + frontend on http://localhost:8080):
+#   cp .env.example .env   # then fill in the Google and TMDB values
+#   docker compose --profile app up --build
 services:
   db:
     image: postgres:17
@@ -16,6 +20,40 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  backend:
+    profiles: [app]
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENV: production
+      PORT: "8080"
+      DB_DRIVER: postgres
+      DB_HOST: db
+      DB_USER: ${DB_USER:-concession}
+      DB_PASSWORD: ${DB_PASSWORD:-concession}
+      DB_NAME: ${DB_NAME:-concession}
+      # Plain-http local use needs non-secure cookies; set true behind HTTPS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAME_SITE: lax
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-http://localhost:8080/api/v1/auth/google/callback}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+      TMDB_READ_ACCESS_TOKEN: ${TMDB_READ_ACCESS_TOKEN:-}
+    restart: unless-stopped
+
+  frontend:
+    profiles: [app]
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:80"
+    restart: unless-stopped
 
 volumes:
   pgdata:

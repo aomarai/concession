@@ -10,8 +10,9 @@ Progress is tracked in GitHub issues (one per phase, see "Roadmap") with a branc
 concession/
 ├── .devcontainer/          # Dev container (Go + Node)
 ├── .github/workflows/      # CI (gofmt, vet, test; frontend build when present)
-├── docker-compose.yml      # Local Postgres
-├── backend/                # Go module github.com/aomarai/concession
+├── docker-compose.yml      # Local Postgres; `--profile app` adds the API and frontend containers
+├── .env.example            # Variables for docker compose (copy to .env)
+├── backend/                # Go module github.com/aomarai/concession (Dockerfile)
 │   ├── cmd/server/main.go  # Entry point: config, DB, router, graceful shutdown
 │   └── internal/
 │       ├── auth/           # Sessions, cookies, Google user find/create
@@ -33,7 +34,7 @@ concession/
 │       ├── logging/        # slog JSON logger + request middleware
 │       └── testutil/       # Shared test helpers (in-memory DB, failure injection)
 ├── docs/                   # API.md (endpoint reference), DEVELOPMENT.md (setup, testing, coverage)
-└── frontend/               # Vite + React + TS + Tailwind + React Query (Phase 5)
+└── frontend/               # Vite + React + TS + Tailwind + React Query (Dockerfile, nginx.conf.template)
     └── src/                # api/ (typed fetch client + endpoints), pages/, components/, lib/, test/
 ```
 
@@ -58,6 +59,8 @@ concession/
 - **Docs:** every change that adds or alters an endpoint, config variable, or workflow updates `docs/API.md`, `docs/DEVELOPMENT.md`, `backend/.env.example`, and this file in the same PR.
 - Format with `gofmt`; CI rejects unformatted code.
 - **Frontend:** work test-first (Vitest + Testing Library, `vi.mock('../api/endpoints')`; never hit a real backend in tests). `npm test` enforces **100%** statement/branch/function/line coverage (`frontend/vite.config.ts`; only `main.tsx` is excluded). All HTTP goes through `src/api/client.ts` (`/api/v1`, cookie session, `ApiError` from the error envelope). Dev server proxies `/api` to the backend (`BACKEND_URL`, default `http://localhost:8080`).
+
+- **Containers:** the backend image needs cgo (sqlite driver), so it is built and run on Debian. The frontend image is nginx serving the SPA and proxying `/api` (unbuffered, long read timeout for SSE). The `docker` CI job builds and smoke-tests the stack; keep `docker compose --profile app` working.
 
 ## Configuration
 
