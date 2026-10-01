@@ -119,3 +119,17 @@ export interface ReviewPage {
   per_page: number
   total: number
 }
+
+export type WatchStatus = 'plan_to_watch' | 'watching' | 'completed' | 'dropped'
+
+export interface Progress {
+  status: WatchStatus
+  last_season_num: number
+  last_episode_num: number
+}
+
+export interface ProgressInput {
+  status: WatchStatus
+  last_season_num?: number
+  last_episode_num?: number
+}

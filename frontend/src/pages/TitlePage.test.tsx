@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router-dom'
 import TitlePage from './TitlePage'
@@ -39,6 +39,7 @@ beforeEach(() => {
   vi.mocked(api.getMovie).mockResolvedValue(movie)
   vi.mocked(api.getShow).mockResolvedValue(show)
   vi.mocked(api.listReviews).mockResolvedValue(page([]))
+  vi.mocked(api.getProgress).mockResolvedValue(null)
 })
 
 describe('TitlePage details', () => {
@@ -235,5 +236,117 @@ describe('TitlePage own review', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Rating out of range')
+  })
+})
+
+describe('TitlePage watch progress', () => {
+  it('starts untracked and tracks a movie', async () => {
+    vi.mocked(api.setProgress).mockResolvedValue({ status: 'plan_to_watch', last_season_num: 0, last_episode_num: 0 })
+    renderTitle()
+    const select = await screen.findByLabelText('Your status')
+    expect(select).toHaveValue('')
+    expect(screen.queryByLabelText('Season')).not.toBeInTheDocument()
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'plan_to_watch', last_season_num: 0, last_episode_num: 0 })
+    await userEvent.selectOptions(select, 'plan_to_watch')
+    expect(api.setProgress).toHaveBeenCalledWith('movies', 603, { status: 'plan_to_watch' })
+    await waitFor(() => expect(screen.getByLabelText('Your status')).toHaveValue('plan_to_watch'))
+  })
+
+  it('changes and clears the status', async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 0, last_episode_num: 0 })
+    vi.mocked(api.setProgress).mockResolvedValue({ status: 'completed', last_season_num: 0, last_episode_num: 0 })
+    vi.mocked(api.clearProgress).mockResolvedValue()
+    renderTitle()
+    const select = await screen.findByLabelText('Your status')
+    await waitFor(() => expect(select).toHaveValue('watching'))
+    await userEvent.selectOptions(select, 'completed')
+    expect(api.setProgress).toHaveBeenCalledWith('movies', 603, { status: 'completed' })
+    await userEvent.selectOptions(select, '')
+    expect(api.clearProgress).toHaveBeenCalledWith('movies', 603)
+  })
+
+  it('does not call the API when clearing an untracked title', async () => {
+    renderTitle()
+    const select = await screen.findByLabelText('Your status')
+    await userEvent.selectOptions(select, '')
+    expect(api.clearProgress).not.toHaveBeenCalled()
+  })
+
+  it('tracks season and episode for shows', async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 2, last_episode_num: 5 })
+    vi.mocked(api.setProgress).mockResolvedValue({ status: 'watching', last_season_num: 3, last_episode_num: 1 })
+    renderTitle('shows')
+    const season = await screen.findByLabelText('Season')
+    await waitFor(() => expect(season).toHaveValue(2))
+    expect(screen.getByLabelText('Episode')).toHaveValue(5)
+    await userEvent.clear(season)
+    await userEvent.type(season, '3')
+    await userEvent.clear(screen.getByLabelText('Episode'))
+    await userEvent.type(screen.getByLabelText('Episode'), '1')
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    expect(api.setProgress).toHaveBeenCalledWith('shows', 1396, { status: 'watching', last_season_num: 3, last_episode_num: 1 })
+  })
+
+  it('keeps season and episode when the status of a show changes', async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 2, last_episode_num: 5 })
+    vi.mocked(api.setProgress).mockResolvedValue({ status: 'completed', last_season_num: 2, last_episode_num: 5 })
+    renderTitle('shows')
+    const select = await screen.findByLabelText('Your status')
+    await waitFor(() => expect(select).toHaveValue('watching'))
+    await userEvent.selectOptions(select, 'completed')
+    expect(api.setProgress).toHaveBeenCalledWith('shows', 1396, { status: 'completed', last_season_num: 2, last_episode_num: 5 })
+  })
+
+  it('treats an empty episode as unset', async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 0, last_episode_num: 0 })
+    vi.mocked(api.setProgress).mockResolvedValue({ status: 'watching', last_season_num: 0, last_episode_num: 0 })
+    renderTitle('shows')
+    const season = await screen.findByLabelText('Season')
+    await waitFor(() => expect(screen.getByLabelText('Your status')).toHaveValue('watching'))
+    await userEvent.clear(season)
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    expect(api.setProgress).toHaveBeenLastCalledWith('shows', 1396, { status: 'watching', last_season_num: 0, last_episode_num: 0 })
+    await userEvent.type(season, '2')
+    await userEvent.clear(screen.getByLabelText('Episode'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    expect(api.setProgress).toHaveBeenLastCalledWith('shows', 1396, { status: 'watching', last_season_num: 2, last_episode_num: 0 })
+  })
+
+  it('shows save errors', async () => {
+    vi.mocked(api.setProgress).mockRejectedValue(new ApiError(400, 'bad_request', 'An episode needs a season'))
+    renderTitle()
+    await userEvent.selectOptions(await screen.findByLabelText('Your status'), 'dropped')
+    expect(await screen.findByText('An episode needs a season')).toBeInTheDocument()
+  })
+
+  it('shows progress load errors', async () => {
+    vi.mocked(api.getProgress).mockRejectedValue(new ApiError(500, 'internal', 'progress broke'))
+    renderTitle()
+    expect(await screen.findByText('progress broke')).toBeInTheDocument()
+  })
+
+  it('disables the controls while a save is in flight', async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 1, last_episode_num: 1 })
+    vi.mocked(api.setProgress).mockReturnValue(new Promise(() => {}))
+    renderTitle('shows')
+    const select = await screen.findByLabelText('Your status')
+    await waitFor(() => expect(select).toHaveValue('watching'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    await waitFor(() => expect(select).toBeDisabled())
+    expect(screen.getByRole('button', { name: 'Save progress' })).toBeDisabled()
+  })
+
+  it.each([['-1', '2'], ['2', '1.5']])('rejects season %s / episode %s without calling the API', async (season, episode) => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 1, last_episode_num: 1 })
+    renderTitle('shows')
+    const seasonBox = await screen.findByLabelText('Season')
+    await waitFor(() => expect(seasonBox).toHaveValue(1))
+    await userEvent.clear(seasonBox)
+    await userEvent.type(seasonBox, season)
+    await userEvent.clear(screen.getByLabelText('Episode'))
+    await userEvent.type(screen.getByLabelText('Episode'), episode)
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/whole numbers/i)
+    expect(api.setProgress).not.toHaveBeenCalled()
   })
 })

@@ -2,9 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  createReview, deleteReview, getMe, getMovie, getShow, listReviews, updateReview,
+  clearProgress, createReview, deleteReview, getMe, getMovie, getProgress, getShow, listReviews, setProgress, updateReview,
 } from '../api/endpoints'
-import type { Review, ReviewInput, TitleKind } from '../api/types'
+import type { Progress, Review, ReviewInput, TitleKind, WatchStatus } from '../api/types'
 import Alert from '../components/Alert'
 import Poster from '../components/Poster'
 import { errorMessage, year } from '../lib/format'
@@ -93,6 +93,84 @@ function ReviewForm({
       </div>
     </form>
   )
+}
+
+const STATUSES: [WatchStatus, string][] = [
+  ['plan_to_watch', 'Plan to watch'],
+  ['watching', 'Watching'],
+  ['completed', 'Completed'],
+  ['dropped', 'Dropped'],
+]
+
+function ProgressControls({ kind, tmdbId, progress }: { kind: TitleKind; tmdbId: number; progress: Progress | null }) {
+  const qc = useQueryClient()
+  const [season, setSeason] = useState(String(progress?.last_season_num ?? 0))
+  const [episode, setEpisode] = useState(String(progress?.last_episode_num ?? 0))
+  const refresh = () => qc.invalidateQueries({ queryKey: ['progress', kind, tmdbId] })
+  const save = useMutation({
+    mutationFn: (input: { status: WatchStatus; last_season_num?: number; last_episode_num?: number }) => setProgress(kind, tmdbId, input),
+    onSuccess: refresh,
+  })
+  const clear = useMutation({ mutationFn: () => clearProgress(kind, tmdbId), onSuccess: refresh })
+  const [invalid, setInvalid] = useState(false)
+  const busy = save.isPending || clear.isPending
+  const error = [save, clear].find((m) => m.isError)?.error
+
+  function saveProgress(status: WatchStatus) {
+    const s = season === '' ? 0 : Number(season)
+    const e = episode === '' ? 0 : Number(episode)
+    if (!Number.isInteger(s) || !Number.isInteger(e) || s < 0 || e < 0) return setInvalid(true)
+    setInvalid(false)
+    save.mutate({ status, last_season_num: s, last_episode_num: e })
+  }
+
+  function changeStatus(value: string) {
+    if (value === '') {
+      if (progress) clear.mutate()
+      return
+    }
+    const status = value as WatchStatus
+    save.mutate(kind === 'shows' && progress
+      ? { status, last_season_num: progress.last_season_num, last_episode_num: progress.last_episode_num }
+      : { status })
+  }
+
+  return (
+    <div className="space-y-2">
+      <label className="flex flex-col text-sm">
+        Your status
+        <select value={progress?.status ?? ''} disabled={busy} onChange={(e) => changeStatus(e.target.value)} className="w-44 rounded bg-zinc-800 px-2 py-1">
+          <option value="">Not tracking</option>
+          {STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      {kind === 'shows' && progress && (
+        <div className="flex items-end gap-2">
+          <label className="flex flex-col text-sm">
+            Season
+            <input type="number" min={0} value={season} onChange={(e) => setSeason(e.target.value)} className="w-20 rounded bg-zinc-800 px-2 py-1" />
+          </label>
+          <label className="flex flex-col text-sm">
+            Episode
+            <input type="number" min={0} value={episode} onChange={(e) => setEpisode(e.target.value)} className="w-20 rounded bg-zinc-800 px-2 py-1" />
+          </label>
+          <button onClick={() => saveProgress(progress.status)} disabled={busy} className="rounded bg-zinc-800 px-3 py-1 text-sm disabled:opacity-50">
+            Save progress
+          </button>
+        </div>
+      )}
+      {invalid && <Alert message="Season and episode must be whole numbers, 0 or more." />}
+      {error !== undefined && <Alert message={errorMessage(error)} />}
+    </div>
+  )
+}
+
+function ProgressPanel({ kind, tmdbId }: { kind: TitleKind; tmdbId: number }) {
+  const progress = useQuery({ queryKey: ['progress', kind, tmdbId], queryFn: () => getProgress(kind, tmdbId) })
+  if (progress.isError) return <Alert message={errorMessage(progress.error)} />
+  if (progress.data === undefined) return <p className="text-zinc-400">Loading…</p>
+  const p = progress.data
+  return <ProgressControls key={`${p?.status}-${p?.last_season_num}-${p?.last_episode_num}`} kind={kind} tmdbId={tmdbId} progress={p} />
 }
 
 function Reviews({ kind, tmdbId }: { kind: TitleKind; tmdbId: number }) {
@@ -201,6 +279,7 @@ export default function TitlePage({ kind }: { kind: TitleKind }) {
           {t.cast && <p className="text-sm text-zinc-400">Cast: {t.cast}</p>}
         </div>
       </div>
+      <ProgressPanel kind={kind} tmdbId={tmdbId} />
       <Reviews kind={kind} tmdbId={tmdbId} />
     </article>
   )

@@ -1,7 +1,10 @@
 import * as api from './endpoints'
-import { request } from './client'
+import { ApiError, request } from './client'
 
-vi.mock('./client', () => ({ request: vi.fn().mockResolvedValue('ok') }))
+vi.mock('./client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./client')>()),
+  request: vi.fn().mockResolvedValue('ok'),
+}))
 
 afterEach(() => vi.mocked(request).mockClear())
 
@@ -48,9 +51,28 @@ describe('endpoints', () => {
       () => api.updateItemNotes('l1', 'i1', 'hi'),
       ['/watchlists/l1/items/i1', { method: 'PATCH', body: { notes: 'hi' } }],
     ],
+    ['progress', () => api.getProgress('shows', 1396), ['/me/progress/shows/1396']],
+    [
+      'set progress',
+      () => api.setProgress('movies', 603, { status: 'completed' }),
+      ['/me/progress/movies/603', { method: 'PUT', body: { status: 'completed' } }],
+    ],
+    ['clear progress', () => api.clearProgress('movies', 603), ['/me/progress/movies/603', { method: 'DELETE' }]],
     ['remove item', () => api.removeItem('l1', 'i1'), ['/watchlists/l1/items/i1', { method: 'DELETE' }]],
   ])('%s', async (_name, call, expected) => {
     await call()
     expect(request).toHaveBeenCalledWith(...expected)
+  })
+})
+
+describe('getProgress', () => {
+  it('treats 404 as "not tracked"', async () => {
+    vi.mocked(request).mockRejectedValueOnce(new ApiError(404, 'not_found', 'nope'))
+    await expect(api.getProgress('movies', 1)).resolves.toBeNull()
+  })
+
+  it('rethrows other errors', async () => {
+    vi.mocked(request).mockRejectedValueOnce(new ApiError(500, 'internal', 'boom'))
+    await expect(api.getProgress('movies', 1)).rejects.toThrow('boom')
   })
 })
