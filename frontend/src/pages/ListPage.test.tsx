@@ -1,10 +1,11 @@
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router-dom'
 import ListPage from './ListPage'
 import { ApiError } from '../api/client'
 import * as api from '../api/endpoints'
 import type { WatchlistDetail } from '../api/types'
+import { FakeEventSource } from '../test/fakeEventSource'
 import { renderWithProviders } from '../test/utils'
 
 vi.mock('../api/endpoints')
@@ -228,5 +229,19 @@ describe('ListPage', () => {
     vi.mocked(api.getWatchlist).mockResolvedValue(detail)
     renderPage()
     expect(await screen.findByRole('heading', { name: 'Sharing' })).toBeInTheDocument()
+  })
+
+  it('refetches when a collaborator changes the list', async () => {
+    FakeEventSource.reset()
+    vi.stubGlobal('EventSource', FakeEventSource)
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    renderPage()
+    await screen.findByText('Breaking Bad')
+    const calls = vi.mocked(api.getWatchlist).mock.calls.length
+    vi.mocked(api.getWatchlist).mockResolvedValue({ ...detail, items: [detail.items[0]] })
+    act(() => FakeEventSource.last.emit('item_removed', { item_id: 'i2' }))
+    await waitFor(() => expect(screen.queryByText('Breaking Bad')).not.toBeInTheDocument())
+    expect(vi.mocked(api.getWatchlist).mock.calls.length).toBeGreaterThan(calls)
+    vi.unstubAllGlobals()
   })
 })

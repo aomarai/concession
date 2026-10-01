@@ -10,6 +10,7 @@ import Poster from '../components/Poster'
 import SharingPanel from '../components/SharingPanel'
 import TitleLink, { itemTitle } from '../components/TitleLink'
 import { errorMessage, year } from '../lib/format'
+import { useListEvents } from '../lib/useListEvents'
 
 const button = 'rounded bg-zinc-800 px-2 py-1 text-sm disabled:opacity-40'
 
@@ -90,6 +91,7 @@ export default function ListPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  useListEvents(id)
   const [editingNotes, setEditingNotes] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)

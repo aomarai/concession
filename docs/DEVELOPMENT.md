@@ -79,6 +79,8 @@ The list page has a Sharing panel: the owner invites people by username or e-mai
 
 Notification links arrive from the API as backend-style paths (`/watchlists/:id`, `/invites`, `/friends`); `src/lib/links.ts` maps those to frontend routes and ignores anything else.
 
+The list page listens to the list'"'"'s event stream (`useListEvents`, an `EventSource` on `/api/v1/watchlists/:id/events`) and refetches when a collaborator changes something; if the list is deleted it returns to the lists page. Events are not replayed, so a reconnect also refetches. Behind a reverse proxy the stream must not be buffered (see "Live updates" below).
+
 Sign in with Google through the backend (`/api/v1/auth/google/login`); because the dev server proxies `/api`, the session cookie stays same-origin. Tests mock `src/api/endpoints` and never touch a network. Write the test first, then the component.
 
 ## Live updates (server-sent events)
