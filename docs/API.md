@@ -10,7 +10,7 @@ Every error uses the same shape:
 { "error": { "code": "unauthorized", "message": "Unauthorized" } }
 ```
 
-Codes in use: `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `internal_error` (500), `upstream_error` (502), `unhealthy` (503). Request bodies must be JSON and are limited to 1 MiB.
+Codes in use: `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404; also returned for unknown routes), `method_not_allowed` (405), `conflict` (409), `internal_error` (500; also returned if a handler panics), `upstream_error` (502), `unhealthy` (503). Request bodies must be JSON and are limited to 1 MiB.
 
 ## Endpoints
 
