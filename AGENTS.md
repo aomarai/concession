@@ -1,6 +1,6 @@
 # Concession — Agents Guide
 
-Guidance for AI assistants working on **Concession**: a collaborative movie and TV show watchlist app. Go (Gin) backend, React frontend (planned), PostgreSQL (SQLite for local/tests).
+Guidance for AI assistants working on **Concession**: a collaborative movie and TV show watchlist app. Go (Gin) backend, React frontend (Phase 5, in progress), PostgreSQL (SQLite for local/tests).
 
 Progress is tracked in GitHub issues (one per phase, see "Roadmap") with a branch per phase (`phase-N-...`).
 
@@ -34,6 +34,7 @@ concession/
 │       └── testutil/       # Shared test helpers (in-memory DB, failure injection)
 ├── docs/                   # API.md (endpoint reference), DEVELOPMENT.md (setup, testing, coverage)
 └── frontend/               # Vite + React + TS + Tailwind + React Query (Phase 5)
+    └── src/                # api/ (typed fetch client + endpoints), pages/, components/, lib/, test/
 ```
 
 ## Conventions
@@ -56,6 +57,7 @@ concession/
 - **Coverage:** aim for 100% of statements. `backend/scripts/coverage.sh` enforces the ratchet in `backend/.coverage-threshold`; raise it when coverage improves, never lower it. Make error paths testable (inject dependencies / package vars) rather than leaving them uncovered.
 - **Docs:** every change that adds or alters an endpoint, config variable, or workflow updates `docs/API.md`, `docs/DEVELOPMENT.md`, `backend/.env.example`, and this file in the same PR.
 - Format with `gofmt`; CI rejects unformatted code.
+- **Frontend:** work test-first (Vitest + Testing Library, `vi.mock('../api/endpoints')`; never hit a real backend in tests). `npm test` enforces **100%** statement/branch/function/line coverage (`frontend/vite.config.ts`; only `main.tsx` is excluded). All HTTP goes through `src/api/client.ts` (`/api/v1`, cookie session, `ApiError` from the error envelope). Dev server proxies `/api` to the backend (`BACKEND_URL`, default `http://localhost:8080`).
 
 ## Configuration
 
