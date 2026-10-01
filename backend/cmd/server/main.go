@@ -75,13 +75,16 @@ func setupDB(cfg *config.Config, logger *slog.Logger) *gorm.DB {
 	return db
 }
 
-func setupRouter(authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) *gin.Engine {
+func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) *gin.Engine {
 	// Use gin.New() instead of gin.Default() to avoid Gin's built-in logger
 	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
 	// We explicitly add only the recovery middleware and our structured logger.
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(logging.GinRequestLoggerMiddleware(logger))
+	r.Use(handlers.CORSMiddleware(cfg.CORSAllowedOrigins))
+
+	r.GET("/healthz", handlers.HealthHandler(db))
 
 	apiV1 := r.Group("/api/v1")
 
@@ -113,7 +116,7 @@ func main() {
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
-	engine := setupRouter(authHandler, userHandler, logger)
+	engine := setupRouter(db, cfg, authHandler, userHandler, logger)
 
 	port := cfg.Port
 	if port == "" {

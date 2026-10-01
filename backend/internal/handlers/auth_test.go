@@ -387,7 +387,7 @@ func TestHandleLogout(t *testing.T) {
 	h := NewAuthHandler(db, newTestConfig(true))
 
 	t.Run("revokes an existing session and clears the cookie", func(t *testing.T) {
-		user := domain.User{Username: "logout-user", Email: "logout@example.com", PasswordHash: "x", DisplayName: "Logout User"}
+		user := domain.User{Username: "logout-user", Email: "logout@example.com", DisplayName: "Logout User"}
 		if err := db.Create(&user).Error; err != nil {
 			t.Fatalf("unexpected error creating user: %v", err)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,6 +65,29 @@ type WatchlistItem struct {
 	Movie   *Movie `json:"movie,omitempty" gorm:"foreignKey:MovieID"`
 	Show    *Show  `json:"show,omitempty" gorm:"foreignKey:ShowID"`
 	AddedBy User   `json:"added_by" gorm:"foreignKey:AddedByID"`
+}
+
+// ErrInvalidWatchlistItem is returned when a WatchlistItem does not reference
+// exactly one title, or the referenced title does not match ItemType.
+var ErrInvalidWatchlistItem = errors.New("watchlist item must reference exactly one movie or show matching its item_type")
+
+// BeforeSave enforces that exactly one of MovieID/ShowID is set and that it
+// agrees with ItemType. This is checked in code (rather than a DB CHECK) so
+// it behaves identically on Postgres and SQLite.
+func (i *WatchlistItem) BeforeSave(_ *gorm.DB) error {
+	switch i.ItemType {
+	case WatchlistTypeMovie:
+		if i.MovieID == nil || i.ShowID != nil {
+			return ErrInvalidWatchlistItem
+		}
+	case WatchlistTypeShow:
+		if i.ShowID == nil || i.MovieID != nil {
+			return ErrInvalidWatchlistItem
+		}
+	default:
+		return ErrInvalidWatchlistItem
+	}
+	return nil
 }
 
 type Collaborator struct {

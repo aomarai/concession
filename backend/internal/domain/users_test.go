@@ -40,10 +40,9 @@ func setupUserTestDB(t *testing.T) *gorm.DB {
 
 func newTestUser(suffix string) User {
 	return User{
-		Username:     "user_" + suffix,
-		Email:        suffix + "@example.com",
-		PasswordHash: "irrelevant-hash",
-		DisplayName:  "Test User " + suffix,
+		Username:    "user_" + suffix,
+		Email:       suffix + "@example.com",
+		DisplayName: "Test User " + suffix,
 	}
 }
 
@@ -164,24 +163,6 @@ func TestUserUniqueEmail(t *testing.T) {
 	second.Email = first.Email // force the collision
 	if err := db.Create(&second).Error; err == nil {
 		t.Fatal("expected error creating user with duplicate email, got nil")
-	}
-}
-
-func TestUserPasswordHashExcludedFromJSON(t *testing.T) {
-	u := newTestUser("json-check")
-	u.PasswordHash = "super-secret-password-hash"
-
-	data, err := json.Marshal(u)
-	if err != nil {
-		t.Fatalf("unexpected error marshaling user: %v", err)
-	}
-
-	out := string(data)
-	if strings.Contains(out, "super-secret-password-hash") {
-		t.Error("PasswordHash value leaked into JSON output despite json:\"-\" tag")
-	}
-	if strings.Contains(out, "PasswordHash") || strings.Contains(out, "password_hash") {
-		t.Error("PasswordHash field name leaked into JSON output")
 	}
 }
 

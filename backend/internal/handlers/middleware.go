@@ -22,7 +22,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			logger.Warn("missing session cookie")
 			clearSessionCookie(c, h.cfg) // Clear existing/stale session cookie to avoid repeated 401s
-			c.AbortWithStatusJSON(401, gin.H{"error": "Unauthorized"})
+			RespondError(c, 401, "unauthorized", "Unauthorized")
 			return
 		}
 
@@ -30,7 +30,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			logger.Warn("invalid session", "error", err)
 			clearSessionCookie(c, h.cfg)
-			c.AbortWithStatusJSON(401, gin.H{"error": "Unauthorized"})
+			RespondError(c, 401, "unauthorized", "Unauthorized")
 			return
 		}
 

@@ -110,6 +110,12 @@ type Config struct {
 	GoogleClientID       string `env:"GOOGLE_CLIENT_ID"`
 	GoogleClientSecret   string `env:"GOOGLE_CLIENT_SECRET"`
 	GoogleRedirectURL    string `env:"GOOGLE_REDIRECT_URL"`
+
+	// CORSAllowedOrigins is a comma-separated list of allowed browser origins.
+	CORSAllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS"`
+
+	// TMDBReadAccessToken is the TMDB v4 "API Read Access Token" (bearer).
+	TMDBReadAccessToken string `env:"TMDB_READ_ACCESS_TOKEN"`
 }
 
 func Load(ctx context.Context) (*Config, error) {
@@ -154,6 +160,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if _, ok := os.LookupEnv("SESSION_COOKIE_MAX_AGE"); !ok {
 		cfg.SessionCookieMaxAge = 2592000 // 30 days in seconds
+	}
+	if _, ok := os.LookupEnv("CORS_ALLOWED_ORIGINS"); !ok {
+		cfg.CORSAllowedOrigins = []string{"http://localhost:5173"}
 	}
 	if _, ok := os.LookupEnv("OAUTH_STATE_COOKIE_NAME"); !ok {
 		cfg.OAuthStateCookieName = "oauth_state"
