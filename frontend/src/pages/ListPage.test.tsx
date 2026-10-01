@@ -28,6 +28,11 @@ function renderPage() {
   )
 }
 
+beforeEach(() => {
+  vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '' })
+  vi.mocked(api.listMembers).mockResolvedValue({ owner: { id: 'u1', display_name: 'Ada L', role: 'owner', status: 'accepted' }, members: [] })
+})
+
 describe('ListPage', () => {
   it('shows the list and its items', async () => {
     vi.mocked(api.getWatchlist).mockResolvedValue(detail)
@@ -217,5 +222,11 @@ describe('ListPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete list' }))
     await userEvent.click(screen.getByRole('button', { name: 'Confirm delete list' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Already gone')
+  })
+
+  it('includes the sharing panel', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Sharing' })).toBeInTheDocument()
   })
 })

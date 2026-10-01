@@ -55,4 +55,21 @@ describe('App auth gate', () => {
     renderWithProviders(<App />, { route: '/nope' })
     expect(await screen.findByText(/page not found/i)).toBeInTheDocument()
   })
+
+  it('has an invites page', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    vi.mocked(api.listInvites).mockResolvedValue({ invites: [] })
+    renderWithProviders(<App />, { route: '/invites' })
+    expect(await screen.findByText(/no pending invitations/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Invites' })).toBeInTheDocument()
+  })
+
+  it('has a shared list page', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    vi.mocked(api.getShared).mockResolvedValue({
+      id: 'l1', owner_id: 'u2', title: 'Shared one', description: '', privacy: 'shared', type: 'movie', role: 'viewer', item_count: 0, items: [],
+    })
+    renderWithProviders(<App />, { route: '/shared/tok' })
+    expect(await screen.findByRole('heading', { name: 'Shared one' })).toBeInTheDocument()
+  })
 })

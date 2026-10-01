@@ -1,5 +1,5 @@
 import { ApiError, request } from './client'
-import type { ListType, Movie, Privacy, Progress, ProgressInput, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
+import type { Invite, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressInput, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
 
 export const getMe = () => request<User>('/me')
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
@@ -49,3 +49,19 @@ export const setProgress = (kind: TitleKind, tmdbId: number, body: ProgressInput
   request<Progress>(`/me/progress/${kind}/${tmdbId}`, { method: 'PUT', body })
 export const clearProgress = (kind: TitleKind, tmdbId: number) =>
   request<void>(`/me/progress/${kind}/${tmdbId}`, { method: 'DELETE' })
+
+export const listMembers = (listId: string) => request<Members>(`/watchlists/${listId}/collaborators`)
+export const inviteMember = (listId: string, user: string, role: MemberRole) =>
+  request<unknown>(`/watchlists/${listId}/collaborators`, { method: 'POST', body: { user, role } })
+export const setMemberRole = (listId: string, userId: string, role: MemberRole) =>
+  request<void>(`/watchlists/${listId}/collaborators/${userId}`, { method: 'PATCH', body: { role } })
+export const removeMember = (listId: string, userId: string) =>
+  request<void>(`/watchlists/${listId}/collaborators/${userId}`, { method: 'DELETE' })
+
+export const listInvites = () => request<{ invites: Invite[] }>('/me/invites')
+export const acceptInvite = (id: string) => request<void>(`/invites/${id}/accept`, { method: 'POST' })
+export const declineInvite = (id: string) => request<void>(`/invites/${id}/decline`, { method: 'POST' })
+
+export const rotateShareToken = (listId: string) =>
+  request<{ share_token: string }>(`/watchlists/${listId}/share-token`, { method: 'POST' })
+export const getShared = (token: string) => request<WatchlistDetail>(`/shared/${encodeURIComponent(token)}`)

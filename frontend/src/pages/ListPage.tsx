@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deleteWatchlist, getWatchlist, removeItem, reorderItems, updateItemNotes, updateWatchlist,
@@ -7,22 +7,9 @@ import {
 import type { Privacy, WatchlistDetail, WatchlistItem } from '../api/types'
 import Alert from '../components/Alert'
 import Poster from '../components/Poster'
+import SharingPanel from '../components/SharingPanel'
+import TitleLink, { itemTitle } from '../components/TitleLink'
 import { errorMessage, year } from '../lib/format'
-
-function itemTitle(it: WatchlistItem): string {
-  return it.movie?.title ?? it.show?.name ?? ''
-}
-
-function titlePath(it: WatchlistItem): string | undefined {
-  if (it.movie) return `/movies/${it.movie.tmdb_id}`
-  return it.show?.tmdb_id ? `/shows/${it.show.tmdb_id}` : undefined
-}
-
-function TitleLink({ item }: { item: WatchlistItem }) {
-  const to = titlePath(item)
-  const name = itemTitle(item)
-  return to ? <Link to={to} className="hover:underline">{name}</Link> : <span>{name}</span>
-}
 
 const button = 'rounded bg-zinc-800 px-2 py-1 text-sm disabled:opacity-40'
 
@@ -191,6 +178,7 @@ export default function ListPage() {
           </li>
         ))}
       </ul>
+      <SharingPanel list={data} />
     </section>
   )
 }
