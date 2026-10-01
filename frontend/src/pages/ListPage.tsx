@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getWatchlist, removeItem } from '../api/endpoints'
 import type { WatchlistItem } from '../api/types'
@@ -8,6 +8,17 @@ import { errorMessage, year } from '../lib/format'
 
 function itemTitle(it: WatchlistItem): string {
   return it.movie?.title ?? it.show?.name ?? ''
+}
+
+function titlePath(it: WatchlistItem): string | undefined {
+  if (it.movie) return `/movies/${it.movie.tmdb_id}`
+  return it.show?.tmdb_id ? `/shows/${it.show.tmdb_id}` : undefined
+}
+
+function TitleLink({ item }: { item: WatchlistItem }) {
+  const to = titlePath(item)
+  const name = itemTitle(item)
+  return to ? <Link to={to} className="hover:underline">{name}</Link> : <span>{name}</span>
 }
 
 export default function ListPage() {
@@ -37,7 +48,7 @@ export default function ListPage() {
             <Poster path={it.movie?.poster_path} title={itemTitle(it)} />
             <div className="flex-1">
               <p className="font-medium">
-                <span>{itemTitle(it)}</span>{' '}
+                <TitleLink item={it} />{' '}
                 {it.movie && <span className="text-zinc-400">({year(it.movie.release_date)})</span>}
               </p>
               {it.notes && <p className="text-sm text-zinc-400">{it.notes}</p>}

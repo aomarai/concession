@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { addItem, listWatchlists, search } from '../api/endpoints'
 import type { ListType, SearchResult, WatchlistSummary } from '../api/types'
@@ -70,7 +71,9 @@ export default function SearchPage() {
           <li key={`${r.media_type}-${r.id}`} className="flex gap-3 rounded bg-zinc-900 p-3">
             <Poster path={r.poster_path} title={r.title ?? r.name ?? ''} />
             <div className="flex-1 space-y-1">
-              <p className="font-medium">{r.title ?? r.name}</p>
+              <p className="font-medium">
+                <Link to={`/${r.media_type === 'tv' ? 'shows' : 'movies'}/${r.id}`} className="hover:underline">{r.title ?? r.name}</Link>
+              </p>
               <p className="text-sm text-zinc-400">{year(r.release_date ?? r.first_air_date)}</p>
               {r.overview && <p className="line-clamp-3 text-sm text-zinc-300">{r.overview}</p>}
               <AddToList result={r} lists={lists.data?.watchlists ?? []} />

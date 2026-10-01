@@ -5,6 +5,7 @@ import { getMe, logout } from './api/endpoints'
 import ListPage from './pages/ListPage'
 import ListsPage from './pages/ListsPage'
 import SearchPage from './pages/SearchPage'
+import TitlePage from './pages/TitlePage'
 import { errorMessage } from './lib/format'
 
 function SignIn() {
@@ -55,6 +56,8 @@ export default function App() {
         <Route path="/" element={<ListsPage />} />
         <Route path="/lists/:id" element={<ListPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/movies/:tmdbId" element={<TitlePage kind="movies" />} />
+        <Route path="/shows/:tmdbId" element={<TitlePage kind="shows" />} />
         <Route path="*" element={<p>Page not found.</p>} />
       </Routes>
     </div>

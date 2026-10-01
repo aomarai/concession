@@ -130,4 +130,12 @@ describe('SearchPage', () => {
     await doSearch()
     expect(await screen.findByText(/no movie list/i)).toBeInTheDocument()
   })
+
+  it('links results to their title pages', async () => {
+    vi.mocked(api.search).mockResolvedValue(results)
+    renderWithProviders(<SearchPage />)
+    await doSearch()
+    expect(await screen.findByRole('link', { name: 'The Matrix' })).toHaveAttribute('href', '/movies/603')
+    expect(screen.getByRole('link', { name: 'Breaking Bad' })).toHaveAttribute('href', '/shows/1396')
+  })
 })
