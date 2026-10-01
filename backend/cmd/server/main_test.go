@@ -20,8 +20,10 @@ import (
 	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/friends"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/notifications"
 	"github.com/aomarai/concession/internal/progress"
 	"github.com/aomarai/concession/internal/reviews"
 	"github.com/aomarai/concession/internal/testutil"
@@ -204,6 +206,8 @@ func TestSetupRouterRoutes(t *testing.T) {
 		Collab:    handlers.NewCollaborationHandler(watchlistSvc),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
+		Notifs:    handlers.NewNotificationHandler(notifications.NewService(db)),
+		Friends:   handlers.NewFriendHandler(friends.NewService(db)),
 	}, logger)
 
 	cases := []struct {
@@ -217,6 +221,8 @@ func TestSetupRouterRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/watchlists", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/me/progress", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/me/reviews", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/me/notifications", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/friends", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/movies/1/reviews", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/auth/logout", http.StatusOK},
 		{http.MethodGet, "/api/v1/auth/google/login", http.StatusTemporaryRedirect},
@@ -490,6 +496,29 @@ func TestRunEndToEndWithTMDB(t *testing.T) {
 				t.Errorf("guest view = %d %s", code, b)
 			}
 
+			// Friends and notifications: the guest befriends the owner, who is notified,
+			// accepts, and then the guest is notified in turn.
+			if code, b := callAs(guestToken, http.MethodPost, "/api/v1/friends", `{"user":"e2e"}`); code != http.StatusCreated {
+				t.Fatalf("friend request = %d %s", code, b)
+			}
+			if code, b := call(http.MethodGet, "/api/v1/me/notifications/unread-count", ""); code != http.StatusOK || !strings.Contains(b, `"unread_count":`) {
+				t.Errorf("unread count = %d %s", code, b)
+			}
+			code, reqBody := call(http.MethodGet, "/api/v1/friends/requests", "")
+			if code != http.StatusOK || !strings.Contains(reqBody, "Guest") {
+				t.Fatalf("incoming requests = %d %s", code, reqBody)
+			}
+			var reqs struct{ Incoming []struct{ ID string } }
+			if err := json.Unmarshal([]byte(reqBody), &reqs); err != nil || len(reqs.Incoming) != 1 {
+				t.Fatalf("requests = %s (%v)", reqBody, err)
+			}
+			if code, b := call(http.MethodPost, "/api/v1/friends/requests/"+reqs.Incoming[0].ID+"/accept", ""); code != http.StatusNoContent {
+				t.Fatalf("accept friend = %d %s", code, b)
+			}
+			if code, b := callAs(guestToken, http.MethodGet, "/api/v1/me/notifications", ""); code != http.StatusOK || !strings.Contains(b, "accepted your friend request") {
+				t.Errorf("guest notifications = %d %s", code, b)
+			}
+
 			// Review flow: rate the movie, then read the title's reviews and summary.
 			code, b := call(http.MethodPost, "/api/v1/movies/603/reviews", `{"rating":9,"title":"Great","content":"Loved it"}`)
 			if code != http.StatusCreated {
@@ -543,6 +572,8 @@ func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 		Collab:    handlers.NewCollaborationHandler(watchlistSvc),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
+		Notifs:    handlers.NewNotificationHandler(notifications.NewService(db)),
+		Friends:   handlers.NewFriendHandler(friends.NewService(db)),
 	}, logger)
 	r.GET("/boom", func(*gin.Context) { panic("kaboom") })
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/keyedlock"
+	"github.com/aomarai/concession/internal/logging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -28,11 +29,47 @@ type Catalog interface {
 	EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, error)
 }
 
+// Notifier delivers notifications; *notifications.Service implements it. It
+// may be nil, and failures never fail the action that triggered them.
+type Notifier interface {
+	Notify(ctx context.Context, userID, actorID uuid.UUID, typ domain.NotificationType, subject, link string) error
+}
+
 type Service struct {
-	DB      *gorm.DB
-	Catalog Catalog
+	DB       *gorm.DB
+	Catalog  Catalog
+	Notifier Notifier
 
 	locks keyedlock.Locks
+}
+
+func (s *Service) notify(ctx context.Context, to, actor uuid.UUID, typ domain.NotificationType, subject, link string) {
+	if s.Notifier == nil {
+		return
+	}
+	if err := s.Notifier.Notify(ctx, to, actor, typ, subject, link); err != nil {
+		logging.FromContext(ctx).Warn("could not send notification", "type", typ, "error", err)
+	}
+}
+
+// notifyMembers tells everyone with access to the list (its owner and accepted
+// collaborators) except the actor.
+func (s *Service) notifyMembers(ctx context.Context, w domain.Watchlist, actor uuid.UUID, typ domain.NotificationType) {
+	if s.Notifier == nil {
+		return
+	}
+	var ids []uuid.UUID
+	err := s.DB.WithContext(ctx).Model(&domain.Collaborator{}).
+		Where("watchlist_id = ? AND status = ?", w.ID, domain.CollaboratorAccepted).Pluck("user_id", &ids).Error
+	if err != nil {
+		logging.FromContext(ctx).Warn("could not look up who to notify", "error", err)
+		return
+	}
+	for _, id := range append(ids, w.OwnerID) {
+		if id != actor {
+			s.notify(ctx, id, actor, typ, w.Title, "/watchlists/"+w.ID.String())
+		}
+	}
 }
 
 func NewService(db *gorm.DB, catalog Catalog) *Service {
@@ -402,6 +439,7 @@ func (s *Service) AddItem(ctx context.Context, userID, id uuid.UUID, tmdbID int6
 	if err != nil {
 		return nil, err
 	}
+	s.notifyMembers(ctx, w, userID, domain.NotificationItemAdded)
 	v := toItemView(item)
 	return &v, nil
 }

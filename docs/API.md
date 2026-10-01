@@ -62,7 +62,7 @@ The owner invites people by username or e-mail (exact match, e-mail case-insensi
 | Method | Path | Who | Description |
 |---|---|---|---|
 | GET | `/api/v1/watchlists/:id/collaborators` | any role | `{owner, members, pending?}`; `pending` invitations are only included for the owner. People appear as `id`, `display_name`, `avatar_url`, never e-mail. On a `public` list this is visible to every signed-in reader |
-| POST | `/api/v1/watchlists/:id/collaborators` | owner | Body `{user, role}` with `role` `editor` or `viewer`. `201` with the pending member. `404` with "No user found..." for an unknown user, `409` if already invited or already a collaborator, `400` when inviting yourself |
+| POST | `/api/v1/watchlists/:id/collaborators` | owner | Body `{user, role}` (a username or e-mail) or `{user_id, role}` (a user ID, e.g. from the friends list), never both; `role` is `editor` or `viewer`. `201` with the pending member. `404` with "No user found..." for an unknown user, `409` if already invited or already a collaborator, `400` when inviting yourself |
 | PATCH | `/api/v1/watchlists/:id/collaborators/:user_id` | owner | Body `{role}`. `204` |
 | DELETE | `/api/v1/watchlists/:id/collaborators/:user_id` | owner, or the user themselves | Removes a collaborator or cancels a pending invitation (an owner can remove anyone; a collaborator can only leave). The owner cannot be removed. Removal is permanent, so the person can be invited again. `204` |
 | GET | `/api/v1/me/invites` | any user | `{"invites":[...]}`: invitations waiting for you, with the list's title, the role offered and who invited you |
@@ -72,6 +72,38 @@ The owner invites people by username or e-mail (exact match, e-mail case-insensi
 | GET | `/api/v1/shared/:token` | any signed-in user | The list behind a share link, read-only (members keep their own role). `404` while the list is `private` or the token is unknown or rotated |
 
 The share token is only shown to the owner (`share_token` on the list). Sharing a link is two steps: set `privacy` to `shared` (or `public`), then send `/shared/<token>` to a friend.
+
+### Friends
+
+A friend request is sent by username/e-mail or by user ID and stays pending until the other person accepts it. Friends appear as `id`, `display_name` and `avatar_url` only. There is one relationship per pair of users: if the person you ask has already asked you, your request just accepts theirs. Declining, cancelling and unfriending are permanent deletions, so either side can ask again later.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/friends` | `{"friends":[...]}`: your accepted friends, most recent first |
+| POST | `/api/v1/friends` | Body `{user}` (username or e-mail) or `{user_id}`, not both. `201` with the entry (`status` is `pending`, or `accepted` if it answered their request). `400` for yourself, `404` for an unknown user, `409` if already friends or already asked |
+| GET | `/api/v1/friends/requests` | `{incoming, outgoing}`: pending requests sent to you and by you |
+| POST | `/api/v1/friends/requests/:id/accept` | Only the person it was sent to. `204` |
+| POST | `/api/v1/friends/requests/:id/decline` | Only the person it was sent to. `204` |
+| DELETE | `/api/v1/friends/:user_id` | Unfriends, cancels a request you sent, or declines one sent to you. `404` if there is no relationship. `204` |
+
+### Notifications
+
+Notifications are created by other actions and are only visible to their recipient. Each has a `type`, a human-readable `message`, a `link_url` for the UI, the `actor` (public profile) and `is_read`. Doing something to yourself never notifies you, and a failure to create a notification never fails the action that caused it. Messages contain user-supplied text such as list titles, so clients must escape them when rendering.
+
+| Event | Recipient | `type` |
+|---|---|---|
+| Invited to a list | the invitee | `watchlist_invite` |
+| Invitation accepted | whoever invited | `invite_accepted` |
+| Title added to a list | the owner and accepted collaborators, except the person who added it | `item_added` |
+| Friend request sent | the addressee | `friend_request` |
+| Friend request accepted | the requester | `friend_accepted` |
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/me/notifications?unread=&page=&per_page=` | `{notifications, unread_count, page, per_page, total}`, newest first. `unread=true` lists only unread ones (`total` then counts only those); `unread_count` always counts all unread |
+| GET | `/api/v1/me/notifications/unread-count` | `{"unread_count": n}`, cheap enough for a badge |
+| POST | `/api/v1/me/notifications/:id/read` | `204`; `404` for someone else's or an unknown notification |
+| POST | `/api/v1/me/notifications/read-all` | `{"marked": n}` |
 
 ### Watch progress
 

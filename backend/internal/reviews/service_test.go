@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/paging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/testutil"
 	"github.com/google/uuid"
@@ -396,7 +397,7 @@ func TestPagination(t *testing.T) {
 	if _, err := e.svc.ListMine(ctx, uuid.New(), int(^uint(0)>>1), 100); !errors.Is(err, svcerr.ErrInvalid) {
 		t.Errorf("max int page: %v", err)
 	}
-	if _, perPage, err := normalizePage(1, 5000); err != nil || perPage != MaxPerPage {
+	if _, perPage, err := paging.Normalize(1, 5000); err != nil || perPage != MaxPerPage {
 		t.Errorf("per_page should be clamped to %d, got %d, %v", MaxPerPage, perPage, err)
 	}
 }

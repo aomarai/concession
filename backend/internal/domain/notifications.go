@@ -7,7 +7,9 @@ type NotificationType string
 const (
 	NotificationWatchlistInvite NotificationType = "watchlist_invite"
 	NotificationItemAdded       NotificationType = "item_added"
+	NotificationInviteAccepted  NotificationType = "invite_accepted"
 	NotificationFriendRequest   NotificationType = "friend_request"
+	NotificationFriendAccepted  NotificationType = "friend_accepted"
 )
 
 type Notification struct {

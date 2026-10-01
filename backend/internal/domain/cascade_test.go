@@ -14,6 +14,7 @@ func allModels() []any {
 	return []any{
 		&User{}, &OAuthAccount{}, &Movie{}, &Show{}, &Season{}, &Episode{}, &Genre{},
 		&Review{}, &Watchlist{}, &WatchlistItem{}, &Collaborator{}, &UserWatchProgress{}, &Session{},
+		&Friendship{}, &Notification{},
 	}
 }
 
@@ -136,6 +137,8 @@ func seedUserGraph(t *testing.T, db *gorm.DB, owns bool) userGraph {
 		&Review{UserID: g.user.ID, Rating: 5, ReviewableID: 1},
 		&Collaborator{UserID: g.user.ID, WatchlistID: g.foreign.ID},
 		&UserWatchProgress{UserID: g.user.ID, ItemType: ItemTypeMovie, ItemID: 1, Status: StatusWatching},
+		&Notification{UserID: g.user.ID, ActorID: g.other.ID, Type: NotificationItemAdded, Message: "m"},
+		friendshipOf(g.user.ID, g.other.ID),
 	}
 	if owns {
 		g.owned = Watchlist{OwnerID: g.user.ID, Title: "mine", Type: WatchlistTypeMovie}
@@ -153,6 +156,11 @@ func seedUserGraph(t *testing.T, db *gorm.DB, owns bool) userGraph {
 		}
 	}
 	return g
+}
+
+func friendshipOf(a, b uuid.UUID) *Friendship {
+	lo, hi := OrderedPair(a, b)
+	return &Friendship{UserAID: lo, UserBID: hi, RequestedBy: a, Status: FriendshipAccepted}
 }
 
 func TestDeleteWatchlistCascade(t *testing.T) {
@@ -211,6 +219,8 @@ func TestDeleteUserCascade(t *testing.T) {
 		{"collaborations", &Collaborator{}, "user_id = ?", g.user.ID},
 		{"collaborators on owned lists", &Collaborator{}, "watchlist_id = ?", g.owned.ID},
 		{"progress", &UserWatchProgress{}, "user_id = ?", g.user.ID},
+		{"notifications", &Notification{}, "user_id = ?", g.user.ID},
+		{"friendships", &Friendship{}, "requested_by = ?", g.user.ID},
 		{"user", &User{}, "id = ?", g.user.ID},
 	}
 	for _, c := range checks {
@@ -236,6 +246,8 @@ func TestDeleteUserCascadeFailures(t *testing.T) {
 		{"delete", "watchlist_items", true},
 		{"delete", "collaborators", false},
 		{"delete", "user_watch_progresses", false},
+		{"delete", "friendships", false},
+		{"delete", "notifications", false},
 		{"delete", "users", false},
 	}
 	for _, tc := range cases {

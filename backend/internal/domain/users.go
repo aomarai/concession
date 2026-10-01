@@ -46,7 +46,8 @@ const (
 
 // DeleteUserCascade soft-deletes a user along with their Reviews,
 // Watchlists (and each watchlist's own Items/Collaborators), Collaborations
-// on other users' watchlists, and WatchProgress, in a single transaction.
+// on other users' watchlists, WatchProgress, friendships and notifications,
+// in a single transaction.
 //
 // NOTE: OAuthAccounts is deliberately NOT included — User.OAuthAccounts is
 // the only one of User's relationships without `constraint:OnDelete:CASCADE`
@@ -80,6 +81,12 @@ func DeleteUserCascade(ctx context.Context, db *gorm.DB, userID uuid.UUID) error
 		}
 
 		if err := tx.Where("user_id = ?", userID).Delete(&UserWatchProgress{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_a_id = ? OR user_b_id = ?", userID, userID).Delete(&Friendship{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&Notification{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&User{}, userID).Error
