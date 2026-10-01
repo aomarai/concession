@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,6 +67,29 @@ type WatchlistItem struct {
 	AddedBy User   `json:"added_by" gorm:"foreignKey:AddedByID"`
 }
 
+// ErrInvalidWatchlistItem is returned when a WatchlistItem does not reference
+// exactly one title, or the referenced title does not match ItemType.
+var ErrInvalidWatchlistItem = errors.New("watchlist item must reference exactly one movie or show matching its item_type")
+
+// BeforeSave enforces that exactly one of MovieID/ShowID is set and that it
+// agrees with ItemType. This is checked in code (rather than a DB CHECK) so
+// it behaves identically on Postgres and SQLite.
+func (i *WatchlistItem) BeforeSave(_ *gorm.DB) error {
+	switch i.ItemType {
+	case WatchlistTypeMovie:
+		if i.MovieID == nil || i.ShowID != nil {
+			return ErrInvalidWatchlistItem
+		}
+	case WatchlistTypeShow:
+		if i.ShowID == nil || i.MovieID != nil {
+			return ErrInvalidWatchlistItem
+		}
+	default:
+		return ErrInvalidWatchlistItem
+	}
+	return nil
+}
+
 type Collaborator struct {
 	BaseUUID
 	UserID      uuid.UUID        `json:"user_id" gorm:"type:uuid;not null;index"`
@@ -115,11 +139,9 @@ func deleteWatchlistCascadeTx(tx *gorm.DB, watchlistID uuid.UUID) error {
 // outer type doesn't define one of the same name itself — defining
 // BeforeCreate directly on Watchlist means GORM calls THIS method instead
 // of BaseUUID's, full stop, not both. So this explicitly calls
-// w.BaseUUID.BeforeCreate(tx) first to keep ID generation working.
-func (w *Watchlist) BeforeCreate(tx *gorm.DB) error {
-	if err := w.BaseUUID.BeforeCreate(tx); err != nil {
-		return err
-	}
+// w.ensureID() first to keep ID generation working.
+func (w *Watchlist) BeforeCreate(_ *gorm.DB) error {
+	w.ensureID()
 	if w.ShareToken == "" {
 		token, err := generateShareToken()
 		if err != nil {
@@ -130,9 +152,12 @@ func (w *Watchlist) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// randRead is swapped in tests to simulate entropy failures.
+var randRead = rand.Read
+
 func generateShareToken() (string, error) {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := randRead(b); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil

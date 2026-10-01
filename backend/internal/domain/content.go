@@ -49,7 +49,7 @@ type Review struct {
 	Title          string         `json:"title"`
 	Content        string         `json:"content"`
 	ReviewableID   uint64         `json:"reviewable_id" gorm:"not null;index"`
-	ReviewableType ReviewableItem `json:"reviewable_type" gorm:"varchar(20);default:'movie';not null;index"` // e.g. "movies" or "shows"
+	ReviewableType ReviewableItem `json:"reviewable_type" gorm:"type:varchar(20);default:'movie';not null;index"` // "movie" or "show"
 
 	// Relationships
 	User User `json:"user" gorm:"foreignKey:UserID"`
@@ -79,7 +79,7 @@ type Movie struct {
 
 	// Relationships
 	Genres  []Genre  `json:"genres,omitempty" gorm:"many2many:movie_genres"`
-	Reviews []Review `json:"reviews,omitempty" gorm:"polymorphic:Reviewable;polymorphicValue:movies"`
+	Reviews []Review `json:"reviews,omitempty" gorm:"polymorphic:Reviewable;polymorphicValue:movie"`
 }
 
 type Show struct {
@@ -89,6 +89,7 @@ type Show struct {
 	ContentRating string                      `json:"content_rating"`
 	IMDBID        string                      `json:"imdb_id" gorm:"index"`
 	TVDBID        int64                       `json:"tvdb_id" gorm:"uniqueIndex;not null"`
+	TMDBID        *int64                      `json:"tmdb_id,omitempty" gorm:"uniqueIndex"` // TMDB is the metadata source; TVDB ID is the canonical key
 	Overview      string                      `json:"overview"`
 	CreatedAt     time.Time                   `json:"created_at"`
 	UpdatedAt     time.Time                   `json:"updated_at"`
@@ -97,7 +98,7 @@ type Show struct {
 	// Relationships
 	Seasons []Season `json:"seasons,omitempty" gorm:"foreignKey:ShowID;constraint:OnDelete:CASCADE"`
 	Genres  []Genre  `json:"genres,omitempty" gorm:"many2many:show_genres"`
-	Reviews []Review `json:"reviews,omitempty" gorm:"polymorphic:Reviewable;polymorphicValue:shows"`
+	Reviews []Review `json:"reviews,omitempty" gorm:"polymorphic:Reviewable;polymorphicValue:show"`
 }
 
 type Season struct {

@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -206,25 +207,34 @@ func TestCollaboratorBeforeCreateGeneratesID(t *testing.T) {
 
 // ---- WatchlistItem ----------------------------------------------------------
 
-func TestWatchlistItemHasNoDefaultItemType(t *testing.T) {
-	// Documents actual current behavior: unlike Watchlist.Privacy or
-	// Collaborator.Role, ItemType has no `default:` tag, so an item
-	// created without one set stores an empty string, not
-	// WatchlistTypeMovie. If a default was intended, the model needs
-	// `gorm:"type:varchar(20);not null;default:'movie';index"` added.
+func TestWatchlistItemValidation(t *testing.T) {
 	db := setupWatchlistTestDB(t)
 
-	item := WatchlistItem{WatchlistID: uuid.New(), MovieID: ptrUint64(1), AddedByID: uuid.New()}
-	if err := db.Create(&item).Error; err != nil {
-		t.Fatalf("unexpected error creating watchlist item: %v", err)
+	cases := []struct {
+		name    string
+		item    WatchlistItem
+		wantErr bool
+	}{
+		{"movie ok", WatchlistItem{ItemType: WatchlistTypeMovie, MovieID: ptrUint64(1)}, false},
+		{"show ok", WatchlistItem{ItemType: WatchlistTypeShow, ShowID: ptrUint64(1)}, false},
+		{"empty item type", WatchlistItem{MovieID: ptrUint64(1)}, true},
+		{"movie type without movie id", WatchlistItem{ItemType: WatchlistTypeMovie}, true},
+		{"movie type with show id", WatchlistItem{ItemType: WatchlistTypeMovie, ShowID: ptrUint64(1)}, true},
+		{"both ids set", WatchlistItem{ItemType: WatchlistTypeShow, MovieID: ptrUint64(1), ShowID: ptrUint64(2)}, true},
 	}
-
-	var fetched WatchlistItem
-	if err := db.First(&fetched, "id = ?", item.ID).Error; err != nil {
-		t.Fatalf("unexpected error fetching watchlist item: %v", err)
-	}
-	if fetched.ItemType != "" {
-		t.Errorf("expected ItemType to be empty with no default set, got %q", fetched.ItemType)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item := tc.item
+			item.WatchlistID = uuid.New()
+			item.AddedByID = uuid.New()
+			err := db.Create(&item).Error
+			if tc.wantErr && !errors.Is(err, ErrInvalidWatchlistItem) {
+				t.Errorf("expected ErrInvalidWatchlistItem, got %v", err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

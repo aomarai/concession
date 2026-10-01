@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
@@ -19,6 +17,9 @@ type AuthHandler struct {
 	DB   *gorm.DB
 	cfg  *config.Config
 	user *auth.UserAuthService
+
+	// newState generates the OAuth CSRF state; overridable in tests.
+	newState func() (string, error)
 }
 
 func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
@@ -26,24 +27,19 @@ func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
 		DB:   db,
 		cfg:  cfg,
 		user: auth.NewUserAuthService(db),
+		newState: func() (string, error) {
+			return auth.GenerateRandomToken(32)
+		},
 	}
-}
-
-func generateRandomToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func (h *AuthHandler) HandleGoogleLogin(c *gin.Context) {
 	logger := logging.FromContext(c.Request.Context())
 
-	state, err := auth.GenerateRandomToken(32)
+	state, err := h.newState()
 	if err != nil {
 		logger.Error("failed to generate oauth state", "error", err)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal error"})
+		RespondError(c, http.StatusInternalServerError, "internal_error", "Internal error")
 		return
 	}
 
@@ -84,7 +80,7 @@ func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
 		logger.Warn("missing oauth code")
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Missing code"})
+		RespondError(c, http.StatusBadRequest, "bad_request", "Missing code")
 		return
 	}
 
@@ -93,14 +89,14 @@ func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 	token, err := cfg.Exchange(c.Request.Context(), code)
 	if err != nil {
 		logger.Error("oauth code exchange failed", "error", err)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
+		RespondError(c, http.StatusInternalServerError, "internal_error", "Authentication failed")
 		return
 	}
 
 	// 3. Fetch the user's Google profile
 	info, err := fetchGoogleUserInfo(c.Request.Context(), cfg, token)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
+		RespondError(c, http.StatusInternalServerError, "internal_error", "Authentication failed")
 		return
 	}
 
@@ -108,7 +104,7 @@ func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 	user, err := h.user.FindOrCreateGoogleUser(c.Request.Context(), auth.GoogleUserInfo(info))
 	if err != nil {
 		logger.Error("failed to resolve user", "error", err)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
+		RespondError(c, http.StatusInternalServerError, "internal_error", "Authentication failed")
 		return
 	}
 
@@ -116,7 +112,7 @@ func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 	rawToken, err := auth.CreateSession(c.Request.Context(), h.DB, user.ID, c.Request.UserAgent(), c.Request.RemoteAddr)
 	if err != nil {
 		logger.Error("failed to create session", "error", err)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
+		RespondError(c, http.StatusInternalServerError, "internal_error", "Authentication failed")
 		return
 	}
 
@@ -152,7 +148,7 @@ func validateState(c *gin.Context, cfg *config.Config) bool {
 	stateCookie, err := c.Cookie(cfg.OAuthStateCookieName)
 	if err != nil || c.Query("state") != stateCookie {
 		ctxLogger.Warn("oauth state mismatch or missing")
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		RespondError(c, http.StatusBadRequest, "bad_request", "Invalid request")
 		return false
 	}
 	// Clear oauth_state cookie while preserving original attributes

@@ -14,6 +14,7 @@
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
+!backend/scripts/coverage.sh
 *.coverprofile
 profile.cov
 

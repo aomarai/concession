@@ -243,8 +243,8 @@ func TestMovieSoftDelete(t *testing.T) {
 // TestMovieReviewsPolymorphicAssociation checks how Review.ReviewableType
 // interacts with GORM's polymorphic association on Movie.Reviews.
 //
-// NOTE: this test documents a real mismatch found while writing it —
-// see the explanation below the code block in chat.
+// The ReviewableItem constants must match the polymorphicValue tags on
+// Movie.Reviews / Show.Reviews, otherwise the association finds nothing.
 func TestMovieReviewsPolymorphicAssociation(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -259,7 +259,7 @@ func TestMovieReviewsPolymorphicAssociation(t *testing.T) {
 		Title:          "Great movie",
 		Content:        "Loved it.",
 		ReviewableID:   uint64(movie.ID),
-		ReviewableType: ReviewableMovies, // "movie" — see note below
+		ReviewableType: ReviewableMovies,
 	}
 	if err := db.Create(&review).Error; err != nil {
 		t.Fatalf("unexpected error creating review: %v", err)
@@ -283,12 +283,8 @@ func TestMovieReviewsPolymorphicAssociation(t *testing.T) {
 		t.Fatalf("unexpected error querying reviews via association: %v", err)
 	}
 	if len(viaAssociation) != len(manual) {
-		t.Logf(
-			"mismatch: manual query found %d review(s) but the polymorphic association found %d. "+
-				"ReviewableMovies is %q but Movie.Reviews' polymorphicValue tag is \"movies\" — "+
-				"these need to match for db.Model(&movie).Association(\"Reviews\") to work as expected.",
-			len(manual), len(viaAssociation), ReviewableMovies,
-		)
+		t.Errorf("polymorphic association found %d review(s), manual query found %d; ReviewableMovies (%q) must match Movie.Reviews polymorphicValue",
+			len(viaAssociation), len(manual), ReviewableMovies)
 	}
 }
 

@@ -48,16 +48,20 @@ func (s *UserAuthService) FindOrCreateGoogleUser(ctx context.Context, info Googl
 		DisplayName:     info.Name,
 		AvatarURL:       info.Picture,
 	}
-	if err := s.DB.WithContext(ctx).Create(&user).Error; err != nil {
-		return nil, err
-	}
-
-	oauthAccount = domain.OAuthAccount{
-		UserID:         user.ID,
-		Provider:       "google",
-		ProviderUserID: info.ID,
-	}
-	if err := s.DB.WithContext(ctx).Create(&oauthAccount).Error; err != nil {
+	// Create the user and its OAuth link atomically so a failure on the second
+	// insert does not leave an orphaned user behind.
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		oauthAccount = domain.OAuthAccount{
+			UserID:         user.ID,
+			Provider:       "google",
+			ProviderUserID: info.ID,
+		}
+		return tx.Create(&oauthAccount).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 
