@@ -12,7 +12,7 @@ cp backend/.env.example backend/.env
 cd backend && go run ./cmd/server
 ```
 
-With no `DB_DRIVER` set the server uses SQLite (`DB_PATH`, default `concession.db`), so Docker is optional for quick experiments. Schema is created with GORM `AutoMigrate` on startup.
+With no `DB_DRIVER` set the server uses SQLite (`DB_PATH`, default `concession.db`), so Docker is optional for quick experiments. Schema is created with GORM `AutoMigrate` on startup. AutoMigrate never rewrites existing rows, so any change that needs data fixed up (for example the `movies`/`shows` → `movie`/`show` review type rename) goes in `migrate()` in `cmd/server/main.go` as an idempotent step with a test.
 
 ### Configuration
 

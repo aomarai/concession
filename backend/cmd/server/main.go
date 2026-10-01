@@ -48,23 +48,7 @@ func initDB(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	err = db.AutoMigrate(
-		&domain.User{},
-		&domain.OAuthAccount{},
-		&domain.Movie{},
-		&domain.Show{},
-		&domain.Season{},
-		&domain.Episode{},
-		&domain.Genre{},
-		&domain.Review{},
-		&domain.Watchlist{},
-		&domain.WatchlistItem{},
-		&domain.Collaborator{},
-		&domain.UserWatchProgress{},
-		&domain.Session{},
-		&domain.Notification{},
-	)
-	if err != nil {
+	if err := migrate(db); err != nil {
 		return nil, err
 	}
 	return db, nil
@@ -75,7 +59,19 @@ func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHand
 	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
 	// We explicitly add only the recovery middleware and our structured logger.
 	r := gin.New()
-	r.Use(gin.Recovery())
+	// Recover from panics, and answer unknown routes/methods, in the same JSON
+	// error shape as every other API error.
+	r.Use(gin.CustomRecoveryWithWriter(gin.DefaultErrorWriter, func(c *gin.Context, recovered any) {
+		logger.Error("panic recovered", "panic", recovered)
+		handlers.RespondError(c, http.StatusInternalServerError, "internal_error", "Internal error")
+	}))
+	r.HandleMethodNotAllowed = true
+	r.NoRoute(func(c *gin.Context) {
+		handlers.RespondError(c, http.StatusNotFound, "not_found", "Not found")
+	})
+	r.NoMethod(func(c *gin.Context) {
+		handlers.RespondError(c, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed")
+	})
 	r.Use(logging.GinRequestLoggerMiddleware(logger))
 	r.Use(handlers.CORSMiddleware(cfg.CORSAllowedOrigins))
 
@@ -96,6 +92,51 @@ func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHand
 
 	return r
 }
+
+// migrate creates or updates the schema and fixes up legacy row data.
+func migrate(db *gorm.DB) error {
+	err := db.AutoMigrate(
+		&domain.User{},
+		&domain.OAuthAccount{},
+		&domain.Movie{},
+		&domain.Show{},
+		&domain.Season{},
+		&domain.Episode{},
+		&domain.Genre{},
+		&domain.Review{},
+		&domain.Watchlist{},
+		&domain.WatchlistItem{},
+		&domain.Collaborator{},
+		&domain.UserWatchProgress{},
+		&domain.Session{},
+		&domain.Notification{},
+	)
+	if err != nil {
+		return err
+	}
+	return normalizeReviewTypes(db)
+}
+
+// normalizeReviewTypes rewrites the plural reviewable_type values ("movies",
+// "shows") that older versions of the polymorphic tags used to the singular
+// ReviewableItem values ("movie", "show"). AutoMigrate changes the schema but
+// never touches row data, so without this such reviews would be invisible to
+// the Movie.Reviews / Show.Reviews associations. It is idempotent.
+func normalizeReviewTypes(db *gorm.DB) error {
+	for old, current := range map[string]domain.ReviewableItem{"movies": domain.ReviewableMovies, "shows": domain.ReviewableShows} {
+		err := db.Unscoped().Model(&domain.Review{}).Where("reviewable_type = ?", old).
+			UpdateColumn("reviewable_type", current).Error
+		if err != nil {
+			return fmt.Errorf("normalize review types: %w", err)
+		}
+	}
+	return nil
+}
+
+// connStateHook, when set, is installed as the HTTP server's ConnState
+// callback. Tests use it to wait for a connection to become active instead of
+// sleeping.
+var connStateHook func(net.Conn, http.ConnState)
 
 // shutdownTimeout bounds how long in-flight requests get to finish on shutdown.
 var shutdownTimeout = 30 * time.Second
@@ -167,7 +208,7 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 		ready(ln.Addr())
 	}
 
-	server := &http.Server{Handler: engine, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: engine, ReadHeaderTimeout: 10 * time.Second, ConnState: connStateHook}
 
 	// Graceful shutdown: use Shutdown() so in-flight requests can complete
 	// before the server exits, reducing client-visible errors on deployment.
