@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router-dom'
 import ListPage from './ListPage'
@@ -20,7 +20,10 @@ const detail: WatchlistDetail = {
 
 function renderPage() {
   return renderWithProviders(
-    <Routes><Route path="/lists/:id" element={<ListPage />} /></Routes>,
+    <Routes>
+      <Route path="/lists/:id" element={<ListPage />} />
+      <Route path="/" element={<p>Home</p>} />
+    </Routes>,
     { route: '/lists/l1' },
   )
 }
@@ -96,5 +99,123 @@ describe('ListPage', () => {
     renderPage()
     expect(await screen.findByText('No Id')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'No Id' })).not.toBeInTheDocument()
+  })
+
+  it('moves items up and down', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.reorderItems).mockResolvedValue()
+    renderPage()
+    await screen.findByText('Breaking Bad')
+    expect(screen.getByRole('button', { name: 'Move The Matrix up' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Move Breaking Bad down' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Move The Matrix down' }))
+    expect(api.reorderItems).toHaveBeenCalledWith('l1', ['i2', 'i1'])
+    await userEvent.click(screen.getByRole('button', { name: 'Move Breaking Bad up' }))
+    expect(api.reorderItems).toHaveBeenLastCalledWith('l1', ['i2', 'i1'])
+  })
+
+  it('shows reorder errors', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.reorderItems).mockRejectedValue(new ApiError(400, 'bad_request', 'Stale order'))
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Move The Matrix down' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Stale order')
+  })
+
+  it('hides reordering and notes editing from viewers', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue({ ...detail, role: 'viewer' })
+    renderPage()
+    await screen.findByText('Breaking Bad')
+    expect(screen.queryByRole('button', { name: /move/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /notes/i })).not.toBeInTheDocument()
+  })
+
+  it('edits notes', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.updateItemNotes).mockResolvedValue()
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit notes for The Matrix' }))
+    const box = screen.getByLabelText('Notes for The Matrix')
+    expect(box).toHaveValue('classic')
+    await userEvent.clear(box)
+    await userEvent.type(box, 'rewatch')
+    await userEvent.click(screen.getByRole('button', { name: 'Save notes' }))
+    expect(api.updateItemNotes).toHaveBeenCalledWith('l1', 'i1', 'rewatch')
+    await waitFor(() => expect(screen.queryByLabelText('Notes for The Matrix')).not.toBeInTheDocument())
+  })
+
+  it('adds notes to an item without any and can cancel', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit notes for Breaking Bad' }))
+    expect(screen.getByLabelText('Notes for Breaking Bad')).toHaveValue('')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('Notes for Breaking Bad')).not.toBeInTheDocument()
+    expect(api.updateItemNotes).not.toHaveBeenCalled()
+  })
+
+  it('shows notes errors', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.updateItemNotes).mockRejectedValue(new ApiError(400, 'bad_request', 'Notes too long'))
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit notes for The Matrix' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save notes' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Notes too long')
+  })
+
+  it('lets the owner change list settings', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.updateWatchlist).mockResolvedValue({} as never)
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'List settings' }))
+    const title = screen.getByLabelText('Title')
+    await userEvent.clear(title)
+    await userEvent.type(title, 'Saturday')
+    await userEvent.type(screen.getByLabelText('Description'), ' and warm')
+    await userEvent.selectOptions(screen.getByLabelText('Privacy'), 'public')
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+    expect(api.updateWatchlist).toHaveBeenCalledWith('l1', { title: 'Saturday', description: 'cozy and warm', privacy: 'public' })
+    await waitFor(() => expect(screen.queryByLabelText('Title')).not.toBeInTheDocument())
+  })
+
+  it('shows settings errors and can be dismissed', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.updateWatchlist).mockRejectedValue(new ApiError(400, 'bad_request', 'Title required'))
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'List settings' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Title required')
+    await userEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument()
+  })
+
+  it('hides settings from non-owners', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue({ ...detail, role: 'editor' })
+    renderPage()
+    await screen.findByText('Breaking Bad')
+    expect(screen.queryByRole('button', { name: 'List settings' })).not.toBeInTheDocument()
+  })
+
+  it('deletes the list after confirming and returns home', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.deleteWatchlist).mockResolvedValue()
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete list' }))
+    expect(api.deleteWatchlist).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm delete list' }))
+    expect(api.deleteWatchlist).toHaveBeenCalledWith('l1')
+    expect(await screen.findByText('Home')).toBeInTheDocument()
+  })
+
+  it('can back out of deleting the list and shows delete errors', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    vi.mocked(api.deleteWatchlist).mockRejectedValue(new ApiError(404, 'not_found', 'Already gone'))
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Keep list' }))
+    expect(screen.getByRole('button', { name: 'Delete list' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Delete list' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm delete list' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Already gone')
   })
 })
