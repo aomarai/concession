@@ -1,5 +1,5 @@
-import { request } from './client'
-import type { ListType, Movie, Privacy, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
+import { ApiError, request } from './client'
+import type { ListType, Movie, Privacy, Progress, ProgressInput, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
 
 export const getMe = () => request<User>('/me')
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
@@ -35,3 +35,17 @@ export const reorderItems = (listId: string, itemIds: string[]) =>
   request<void>(`/watchlists/${listId}/items/order`, { method: 'PUT', body: { item_ids: itemIds } })
 export const updateItemNotes = (listId: string, itemId: string, notes: string) =>
   request<void>(`/watchlists/${listId}/items/${itemId}`, { method: 'PATCH', body: { notes } })
+
+// A title nobody is tracking is "not found" to the API; for the UI it is simply null.
+export async function getProgress(kind: TitleKind, tmdbId: number): Promise<Progress | null> {
+  try {
+    return await request<Progress>(`/me/progress/${kind}/${tmdbId}`)
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null
+    throw err
+  }
+}
+export const setProgress = (kind: TitleKind, tmdbId: number, body: ProgressInput) =>
+  request<Progress>(`/me/progress/${kind}/${tmdbId}`, { method: 'PUT', body })
+export const clearProgress = (kind: TitleKind, tmdbId: number) =>
+  request<void>(`/me/progress/${kind}/${tmdbId}`, { method: 'DELETE' })

@@ -73,7 +73,7 @@ npm test           # Vitest + Testing Library, enforces 100% coverage
 npm run lint && npm run build
 ```
 
-Routes: `/` (your lists), `/lists/:id` (owners and editors reorder items with the arrow buttons, edit notes and remove items; owners also edit list settings and delete the list), `/search`, `/movies/:tmdbId` and `/shows/:tmdbId` (title details with reviews). The title page recognizes your own review by author ID within the loaded page of reviews (20 per page); if you have reviewed a title but your review is on a later page, posting again returns the backend's `409`.
+Routes: `/` (your lists), `/lists/:id` (owners and editors reorder items with the arrow buttons, edit notes and remove items; owners also edit list settings and delete the list), `/search`, `/movies/:tmdbId` and `/shows/:tmdbId` (title details with your watch status — and season/episode for shows — and reviews). The title page recognizes your own review by author ID within the loaded page of reviews (20 per page); if you have reviewed a title but your review is on a later page, posting again returns the backend's `409`.
 
 Sign in with Google through the backend (`/api/v1/auth/google/login`); because the dev server proxies `/api`, the session cookie stays same-origin. Tests mock `src/api/endpoints` and never touch a network. Write the test first, then the component.
 
