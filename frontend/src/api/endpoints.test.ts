@@ -33,6 +33,21 @@ describe('endpoints', () => {
     ],
     ['update review', () => api.updateReview('r1', { rating: 4 }), ['/reviews/r1', { method: 'PATCH', body: { rating: 4 } }]],
     ['delete review', () => api.deleteReview('r1'), ['/reviews/r1', { method: 'DELETE' }]],
+    [
+      'update list',
+      () => api.updateWatchlist('l1', { title: 'N', privacy: 'shared' }),
+      ['/watchlists/l1', { method: 'PATCH', body: { title: 'N', privacy: 'shared' } }],
+    ],
+    [
+      'reorder',
+      () => api.reorderItems('l1', ['b', 'a']),
+      ['/watchlists/l1/items/order', { method: 'PUT', body: { item_ids: ['b', 'a'] } }],
+    ],
+    [
+      'item notes',
+      () => api.updateItemNotes('l1', 'i1', 'hi'),
+      ['/watchlists/l1/items/i1', { method: 'PATCH', body: { notes: 'hi' } }],
+    ],
     ['remove item', () => api.removeItem('l1', 'i1'), ['/watchlists/l1/items/i1', { method: 'DELETE' }]],
   ])('%s', async (_name, call, expected) => {
     await call()

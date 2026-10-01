@@ -28,3 +28,10 @@ export const createReview = (kind: TitleKind, tmdbId: number, body: ReviewInput)
 export const updateReview = (id: string, body: Partial<ReviewInput>) =>
   request<Review>(`/reviews/${id}`, { method: 'PATCH', body })
 export const deleteReview = (id: string) => request<void>(`/reviews/${id}`, { method: 'DELETE' })
+
+export const updateWatchlist = (id: string, body: { title?: string; description?: string; privacy?: Privacy }) =>
+  request<WatchlistSummary>(`/watchlists/${id}`, { method: 'PATCH', body })
+export const reorderItems = (listId: string, itemIds: string[]) =>
+  request<void>(`/watchlists/${listId}/items/order`, { method: 'PUT', body: { item_ids: itemIds } })
+export const updateItemNotes = (listId: string, itemId: string, notes: string) =>
+  request<void>(`/watchlists/${listId}/items/${itemId}`, { method: 'PATCH', body: { notes } })
