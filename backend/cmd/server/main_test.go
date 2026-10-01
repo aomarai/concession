@@ -195,11 +195,13 @@ func TestSetupRouterRoutes(t *testing.T) {
 	}
 	logger := logging.NewLogger(&config.Config{Environment: "test"})
 	catalogSvc := catalog.NewService(db, tmdb.NewClient("t"))
+	watchlistSvc := watchlist.NewService(db, catalogSvc)
 	r := setupRouter(db, cfg, apiHandlers{
 		Auth:      handlers.NewAuthHandler(db, cfg),
 		User:      handlers.NewUserHandler(db),
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
-		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
+		Watchlist: handlers.NewWatchlistHandler(watchlistSvc),
+		Collab:    handlers.NewCollaborationHandler(watchlistSvc),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 	}, logger)
@@ -445,6 +447,49 @@ func TestRunEndToEndWithTMDB(t *testing.T) {
 				t.Errorf("list progress = %d %s", code, b)
 			}
 
+			// Collaboration: invite a second account, which accepts and then sees the list.
+			guest := domain.User{Username: "guest", Email: "guest@example.com", DisplayName: "Guest"}
+			if err := db.Create(&guest).Error; err != nil {
+				t.Fatal(err)
+			}
+			guestToken, err := auth.CreateSession(ctx, db, guest.ID, "ua", "ip")
+			if err != nil {
+				t.Fatal(err)
+			}
+			callAs := func(tok, method, path, body string) (int, string) {
+				req, _ := http.NewRequest(method, base+path, strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				req.AddCookie(&http.Cookie{Name: "session_token", Value: tok})
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = resp.Body.Close() }()
+				b, _ := io.ReadAll(resp.Body)
+				return resp.StatusCode, string(b)
+			}
+			if code, b := call(http.MethodPost, "/api/v1/watchlists/"+listID+"/collaborators", `{"user":"guest","role":"viewer"}`); code != http.StatusCreated {
+				t.Fatalf("invite = %d %s", code, b)
+			}
+			if code, _ := callAs(guestToken, http.MethodGet, "/api/v1/watchlists/"+listID, ""); code != http.StatusNotFound {
+				t.Errorf("a pending invitee must not see the list, got %d", code)
+			}
+			code, invBody := callAs(guestToken, http.MethodGet, "/api/v1/me/invites", "")
+			if code != http.StatusOK {
+				t.Fatalf("list invites = %d %s", code, invBody)
+			}
+			var inv struct{ Invites []struct{ ID string } }
+			if err := json.Unmarshal([]byte(invBody), &inv); err != nil || len(inv.Invites) != 1 {
+				t.Fatalf("invites = %s (%v)", invBody, err)
+			}
+			inviteID := inv.Invites[0].ID
+			if code, b := callAs(guestToken, http.MethodPost, "/api/v1/invites/"+inviteID+"/accept", ""); code != http.StatusNoContent {
+				t.Fatalf("accept = %d %s", code, b)
+			}
+			if code, b := callAs(guestToken, http.MethodGet, "/api/v1/watchlists/"+listID, ""); code != http.StatusOK || !strings.Contains(b, "The Matrix") {
+				t.Errorf("guest view = %d %s", code, b)
+			}
+
 			// Review flow: rate the movie, then read the title's reviews and summary.
 			code, b := call(http.MethodPost, "/api/v1/movies/603/reviews", `{"rating":9,"title":"Great","content":"Loved it"}`)
 			if code != http.StatusCreated {
@@ -489,11 +534,13 @@ func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 	defer closeGormDB(db)
 	logger := logging.NewLogger(&config.Config{Environment: "test"})
 	catalogSvc := catalog.NewService(db, tmdb.NewClient("t"))
+	watchlistSvc := watchlist.NewService(db, catalogSvc)
 	r := setupRouter(db, cfg, apiHandlers{
 		Auth:      handlers.NewAuthHandler(db, cfg),
 		User:      handlers.NewUserHandler(db),
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
-		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
+		Watchlist: handlers.NewWatchlistHandler(watchlistSvc),
+		Collab:    handlers.NewCollaborationHandler(watchlistSvc),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 	}, logger)

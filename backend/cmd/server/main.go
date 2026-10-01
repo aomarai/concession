@@ -63,6 +63,7 @@ type apiHandlers struct {
 	User      *handlers.UserHandler
 	Catalog   *handlers.CatalogHandler
 	Watchlist *handlers.WatchlistHandler
+	Collab    *handlers.CollaborationHandler
 	Progress  *handlers.ProgressHandler
 	Reviews   *handlers.ReviewHandler
 }
@@ -103,6 +104,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 	auth.GET("/me", h.User.HandleGetMe)
 	h.Catalog.RegisterRoutes(auth)
 	h.Watchlist.RegisterRoutes(auth)
+	h.Collab.RegisterRoutes(auth)
 	h.Progress.RegisterRoutes(auth)
 	h.Reviews.RegisterRoutes(auth)
 
@@ -209,11 +211,13 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 			}
 		}()
 	}
+	watchlistSvc := watchlist.NewService(db, catalogSvc)
 	engine := setupRouter(db, cfg, apiHandlers{
 		Auth:      authHandler,
 		User:      userHandler,
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
-		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
+		Watchlist: handlers.NewWatchlistHandler(watchlistSvc),
+		Collab:    handlers.NewCollaborationHandler(watchlistSvc),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 	}, logger)

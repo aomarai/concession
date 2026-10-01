@@ -27,6 +27,15 @@ const (
 	RoleViewer CollaboratorRole = "viewer" // read only
 )
 
+// CollaboratorStatus says whether an invitation has been accepted. Only
+// accepted collaborators have access to the list.
+type CollaboratorStatus string
+
+const (
+	CollaboratorPending  CollaboratorStatus = "pending"
+	CollaboratorAccepted CollaboratorStatus = "accepted"
+)
+
 type WatchlistType string
 
 const (
@@ -97,10 +106,14 @@ func (i *WatchlistItem) BeforeCreate(_ *gorm.DB) error {
 
 type Collaborator struct {
 	BaseUUID
-	UserID      uuid.UUID        `json:"user_id" gorm:"type:uuid;not null;index"`
-	WatchlistID uuid.UUID        `json:"watchlist_id" gorm:"type:uuid;not null;index"`
+	UserID      uuid.UUID        `json:"user_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_collaborator_list_user"`
+	WatchlistID uuid.UUID        `json:"watchlist_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_collaborator_list_user"`
 	Role        CollaboratorRole `json:"role" gorm:"type:varchar(20);default:'editor';not null"`
-	JoinedAt    time.Time        `json:"joined_at"`
+	// Status is pending until the invited user accepts. Rows created without a
+	// status (older data, direct inserts) count as accepted.
+	Status    CollaboratorStatus `json:"status" gorm:"type:varchar(20);default:'accepted';not null"`
+	InvitedBy *uuid.UUID         `json:"invited_by,omitempty" gorm:"type:uuid"`
+	JoinedAt  time.Time          `json:"joined_at"`
 
 	// Relationships
 	User      User      `json:"user" gorm:"foreignKey:UserID"`
@@ -159,6 +172,9 @@ func (w *Watchlist) BeforeCreate(_ *gorm.DB) error {
 
 // randRead is swapped in tests to simulate entropy failures.
 var randRead = rand.Read
+
+// NewShareToken returns a fresh random token for a watchlist share link.
+func NewShareToken() (string, error) { return generateShareToken() }
 
 func generateShareToken() (string, error) {
 	b := make([]byte, 16)

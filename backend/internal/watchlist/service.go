@@ -85,8 +85,9 @@ func toSummary(w domain.Watchlist, role domain.CollaboratorRole, count int64) Su
 	return s
 }
 
-// access loads a watchlist and the caller's role on it. Users with no role
-// get svcerr.ErrNotFound.
+// access loads a watchlist and the caller's role on it: owner, an accepted
+// collaborator's role, or viewer for anyone on a public list. Everyone else
+// (including users with only a pending invite) gets svcerr.ErrNotFound.
 func (s *Service) access(ctx context.Context, userID, id uuid.UUID) (domain.Watchlist, domain.CollaboratorRole, error) {
 	db := s.DB.WithContext(ctx)
 	var w domain.Watchlist
@@ -100,8 +101,11 @@ func (s *Service) access(ctx context.Context, userID, id uuid.UUID) (domain.Watc
 		return w, domain.RoleOwner, nil
 	}
 	var c domain.Collaborator
-	err := db.Where("watchlist_id = ? AND user_id = ?", id, userID).First(&c).Error
+	err := db.Where("watchlist_id = ? AND user_id = ? AND status = ?", id, userID, domain.CollaboratorAccepted).First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if w.Privacy == domain.PrivacyPublic {
+			return w, domain.RoleViewer, nil // public lists are readable by any signed-in user
+		}
 		return w, "", svcerr.ErrNotFound
 	}
 	if err != nil {
@@ -198,7 +202,7 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]Summary, error)
 	db := s.DB.WithContext(ctx)
 
 	var collabs []domain.Collaborator
-	if err := db.Where("user_id = ?", userID).Find(&collabs).Error; err != nil {
+	if err := db.Where("user_id = ? AND status = ?", userID, domain.CollaboratorAccepted).Find(&collabs).Error; err != nil {
 		return nil, err
 	}
 	roles := make(map[uuid.UUID]domain.CollaboratorRole, len(collabs))
@@ -263,9 +267,13 @@ func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Detail, error
 	if err != nil {
 		return nil, err
 	}
+	return s.detail(ctx, w, role)
+}
+
+func (s *Service) detail(ctx context.Context, w domain.Watchlist, role domain.CollaboratorRole) (*Detail, error) {
 	var items []domain.WatchlistItem
-	err = s.DB.WithContext(ctx).Preload("Movie.Genres").Preload("Show.Genres").
-		Where("watchlist_id = ?", id).Order("position, created_at, id").Find(&items).Error
+	err := s.DB.WithContext(ctx).Preload("Movie.Genres").Preload("Show.Genres").
+		Where("watchlist_id = ?", w.ID).Order("position, created_at, id").Find(&items).Error
 	if err != nil {
 		return nil, err
 	}

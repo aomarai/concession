@@ -17,19 +17,33 @@ var (
 	ErrInvalid = errors.New("invalid input")
 )
 
-type invalidError struct{ msg string }
+// messageError is a sentinel error with a message that is safe to show users.
+type messageError struct {
+	kind error
+	msg  string
+}
 
-func (e invalidError) Error() string        { return e.msg }
-func (e invalidError) Is(target error) bool { return target == ErrInvalid }
+func (e messageError) Error() string        { return e.msg }
+func (e messageError) Is(target error) bool { return target == e.kind }
 
 // Invalid returns a validation error whose message is safe to show users.
-func Invalid(msg string) error { return invalidError{msg} }
+func Invalid(msg string) error { return messageError{ErrInvalid, msg} }
+
+// NotFound returns a not-found error with a user-facing message.
+func NotFound(msg string) error { return messageError{ErrNotFound, msg} }
+
+// Duplicate returns an already-exists error with a user-facing message.
+func Duplicate(msg string) error { return messageError{ErrDuplicate, msg} }
+
+// MessageOr returns the user-facing message carried by err (created with
+// Invalid, NotFound or Duplicate), or fallback when it carries none.
+func MessageOr(err error, fallback string) string {
+	var me messageError
+	if errors.As(err, &me) {
+		return me.msg
+	}
+	return fallback
+}
 
 // Message returns the user-facing text of a validation error.
-func Message(err error) string {
-	var ie invalidError
-	if errors.As(err, &ie) {
-		return ie.msg
-	}
-	return ErrInvalid.Error()
-}
+func Message(err error) string { return MessageOr(err, ErrInvalid.Error()) }
