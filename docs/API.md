@@ -61,7 +61,7 @@ The owner invites people by username or e-mail (exact match, e-mail case-insensi
 
 | Method | Path | Who | Description |
 |---|---|---|---|
-| GET | `/api/v1/watchlists/:id/collaborators` | any role | `{owner, members, pending?}`; `pending` invitations are only included for the owner. People appear as `id`, `display_name`, `avatar_url`, never e-mail |
+| GET | `/api/v1/watchlists/:id/collaborators` | any role | `{owner, members, pending?}`; `pending` invitations are only included for the owner. People appear as `id`, `display_name`, `avatar_url`, never e-mail. On a `public` list this is visible to every signed-in reader |
 | POST | `/api/v1/watchlists/:id/collaborators` | owner | Body `{user, role}` with `role` `editor` or `viewer`. `201` with the pending member. `404` with "No user found..." for an unknown user, `409` if already invited or already a collaborator, `400` when inviting yourself |
 | PATCH | `/api/v1/watchlists/:id/collaborators/:user_id` | owner | Body `{role}`. `204` |
 | DELETE | `/api/v1/watchlists/:id/collaborators/:user_id` | owner, or the user themselves | Removes a collaborator or cancels a pending invitation (an owner can remove anyone; a collaborator can only leave). The owner cannot be removed. Removal is permanent, so the person can be invited again. `204` |
