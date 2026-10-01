@@ -75,6 +75,16 @@ describe('endpoints', () => {
     ['decline', () => api.declineInvite('i1'), ['/invites/i1/decline', { method: 'POST' }]],
     ['rotate token', () => api.rotateShareToken('l1'), ['/watchlists/l1/share-token', { method: 'POST' }]],
     ['shared', () => api.getShared('a b'), ['/shared/a%20b']],
+    ['notifications', () => api.listNotifications(3), ['/me/notifications?page=3']],
+    ['unread count', () => api.getUnreadCount(), ['/me/notifications/unread-count']],
+    ['mark read', () => api.markNotificationRead('n1'), ['/me/notifications/n1/read', { method: 'POST' }]],
+    ['mark all read', () => api.markAllNotificationsRead(), ['/me/notifications/read-all', { method: 'POST' }]],
+    ['friends', () => api.listFriends(), ['/friends']],
+    ['friend requests', () => api.listFriendRequests(), ['/friends/requests']],
+    ['add friend', () => api.addFriend('grace'), ['/friends', { method: 'POST', body: { user: 'grace' } }]],
+    ['accept request', () => api.acceptFriendRequest('f1'), ['/friends/requests/f1/accept', { method: 'POST' }]],
+    ['decline request', () => api.declineFriendRequest('f1'), ['/friends/requests/f1/decline', { method: 'POST' }]],
+    ['unfriend', () => api.removeFriend('u2'), ['/friends/u2', { method: 'DELETE' }]],
     ['remove item', () => api.removeItem('l1', 'i1'), ['/watchlists/l1/items/i1', { method: 'DELETE' }]],
   ])('%s', async (_name, call, expected) => {
     await call()

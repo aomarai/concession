@@ -161,3 +161,35 @@ export interface Invite {
   role: MemberRole
   invited_by?: Person
 }
+
+export type NotificationType = 'watchlist_invite' | 'item_added' | 'invite_accepted' | 'friend_request' | 'friend_accepted'
+
+export interface AppNotification {
+  id: string
+  type: NotificationType
+  message: string
+  is_read: boolean
+  link_url?: string
+  actor: Person
+  created_at: string
+}
+
+export interface NotificationPage {
+  notifications: AppNotification[]
+  unread_count: number
+  page: number
+  per_page: number
+  total: number
+}
+
+export interface FriendEntry {
+  id: string
+  user: Person
+  status: 'pending' | 'accepted'
+  created_at: string
+}
+
+export interface FriendRequests {
+  incoming: FriendEntry[]
+  outgoing: FriendEntry[]
+}
