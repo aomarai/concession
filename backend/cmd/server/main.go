@@ -10,10 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/tmdb"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -75,7 +77,7 @@ func setupDB(cfg *config.Config, logger *slog.Logger) *gorm.DB {
 	return db
 }
 
-func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) *gin.Engine {
+func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, catalogHandler *handlers.CatalogHandler, logger *slog.Logger) *gin.Engine {
 	// Use gin.New() instead of gin.Default() to avoid Gin's built-in logger
 	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
 	// We explicitly add only the recovery middleware and our structured logger.
@@ -97,6 +99,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHand
 	auth := apiV1.Group("/")
 	auth.Use(authHandler.AuthMiddleware())
 	auth.GET("/me", userHandler.HandleGetMe)
+	catalogHandler.RegisterRoutes(auth)
 
 	return r
 }
@@ -116,7 +119,18 @@ func main() {
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
-	engine := setupRouter(db, cfg, authHandler, userHandler, logger)
+	if cfg.TMDBReadAccessToken == "" {
+		logger.Warn("TMDB_READ_ACCESS_TOKEN is not set; catalog endpoints will fail")
+	}
+	catalogSvc := catalog.NewService(db, tmdb.NewClient(cfg.TMDBReadAccessToken))
+	if cfg.TMDBReadAccessToken != "" {
+		go func() {
+			if err := catalogSvc.SyncGenres(ctx); err != nil {
+				logger.Warn("genre sync failed", "error", err)
+			}
+		}()
+	}
+	engine := setupRouter(db, cfg, authHandler, userHandler, handlers.NewCatalogHandler(catalogSvc), logger)
 
 	port := cfg.Port
 	if port == "" {

@@ -88,7 +88,7 @@ type Show struct {
 	Actors        datatypes.JSONSlice[string] `json:"actors"`
 	ContentRating string                      `json:"content_rating"`
 	IMDBID        string                      `json:"imdb_id" gorm:"index"`
-	TVDBID        int64                       `json:"tvdb_id" gorm:"uniqueIndex;not null"`
+	TVDBID        *int64                      `json:"tvdb_id,omitempty" gorm:"uniqueIndex"` // nullable: TMDB does not know the TVDB ID of every show
 	TMDBID        *int64                      `json:"tmdb_id,omitempty" gorm:"uniqueIndex"` // TMDB is the metadata source; TVDB ID is the canonical key
 	Overview      string                      `json:"overview"`
 	CreatedAt     time.Time                   `json:"created_at"`

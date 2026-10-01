@@ -72,12 +72,12 @@ func TestMovieUniqueTMDBID(t *testing.T) {
 func TestShowUniqueTVDBID(t *testing.T) {
 	db := setupTestDB(t)
 
-	s1 := Show{Name: "Breaking Bad", TVDBID: 81189}
+	s1 := Show{Name: "Breaking Bad", TVDBID: ptrInt64(81189)}
 	if err := db.Create(&s1).Error; err != nil {
 		t.Fatalf("unexpected error creating first show: %v", err)
 	}
 
-	s2 := Show{Name: "Duplicate TVDB ID", TVDBID: 81189}
+	s2 := Show{Name: "Duplicate TVDB ID", TVDBID: ptrInt64(81189)}
 	if err := db.Create(&s2).Error; err == nil {
 		t.Fatal("expected error creating show with duplicate TVDBID, got nil")
 	}
@@ -121,7 +121,7 @@ func TestMovieGenreManyToMany(t *testing.T) {
 func TestShowSeasonEpisodePreload(t *testing.T) {
 	db := setupTestDB(t)
 
-	show := Show{Name: "Test Show", TVDBID: 12345}
+	show := Show{Name: "Test Show", TVDBID: ptrInt64(12345)}
 	if err := db.Create(&show).Error; err != nil {
 		t.Fatalf("unexpected error creating show: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestSeasonEpisodeCascadeDelete(t *testing.T) {
 		t.Fatalf("failed to migrate models: %v", err)
 	}
 
-	show := Show{Name: "Cascade Show", TVDBID: 99999}
+	show := Show{Name: "Cascade Show", TVDBID: ptrInt64(99999)}
 	if err := db.Create(&show).Error; err != nil {
 		t.Fatalf("unexpected error creating show: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestMovieReviewsPolymorphicAssociation(t *testing.T) {
 func TestEpisodeFieldsRoundTrip(t *testing.T) {
 	db := setupTestDB(t)
 
-	show := Show{Name: "Round Trip Show", TVDBID: 55555}
+	show := Show{Name: "Round Trip Show", TVDBID: ptrInt64(55555)}
 	if err := db.Create(&show).Error; err != nil {
 		t.Fatalf("unexpected error creating show: %v", err)
 	}
@@ -332,3 +332,5 @@ func TestEpisodeFieldsRoundTrip(t *testing.T) {
 		t.Errorf("expected writers [Writer One], got %v", fetched.Writers)
 	}
 }
+
+func ptrInt64(v int64) *int64 { return &v }
