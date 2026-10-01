@@ -34,13 +34,13 @@ func RespondServiceError(c *gin.Context, err error) {
 	case errors.Is(err, svcerr.ErrInvalid):
 		RespondError(c, http.StatusBadRequest, "bad_request", svcerr.Message(err))
 	case errors.Is(err, svcerr.ErrNotFound):
-		RespondError(c, http.StatusNotFound, "not_found", "Not found")
+		RespondError(c, http.StatusNotFound, "not_found", svcerr.MessageOr(err, "Not found"))
 	case errors.Is(err, tmdb.ErrNotFound):
 		RespondError(c, http.StatusNotFound, "not_found", "Title not found")
 	case errors.Is(err, svcerr.ErrForbidden):
 		RespondError(c, http.StatusForbidden, "forbidden", "You do not have permission to do that")
 	case errors.Is(err, svcerr.ErrDuplicate):
-		RespondError(c, http.StatusConflict, "conflict", "Already exists")
+		RespondError(c, http.StatusConflict, "conflict", svcerr.MessageOr(err, "Already exists"))
 	case errors.Is(err, catalog.ErrUpstream):
 		logging.FromContext(c.Request.Context()).Error("TMDB request failed", "error", err)
 		RespondError(c, http.StatusBadGateway, "upstream_error", "Could not load title data")

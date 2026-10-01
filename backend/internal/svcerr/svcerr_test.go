@@ -21,3 +21,27 @@ func TestInvalid(t *testing.T) {
 		t.Errorf("Message of foreign error = %q", got)
 	}
 }
+
+func TestMessageCarryingErrors(t *testing.T) {
+	cases := []struct {
+		err  error
+		kind error
+		msg  string
+	}{
+		{NotFound("no such user"), ErrNotFound, "no such user"},
+		{Duplicate("already invited"), ErrDuplicate, "already invited"},
+		{Invalid("bad"), ErrInvalid, "bad"},
+	}
+	for _, tc := range cases {
+		wrapped := fmt.Errorf("ctx: %w", tc.err)
+		if !errors.Is(wrapped, tc.kind) || MessageOr(wrapped, "fallback") != tc.msg {
+			t.Errorf("%v: is=%v msg=%q", tc.err, errors.Is(wrapped, tc.kind), MessageOr(wrapped, "fallback"))
+		}
+	}
+	if errors.Is(NotFound("x"), ErrDuplicate) {
+		t.Error("kinds must not cross-match")
+	}
+	if got := MessageOr(ErrNotFound, "Not found"); got != "Not found" {
+		t.Errorf("a bare sentinel carries no message, got %q", got)
+	}
+}

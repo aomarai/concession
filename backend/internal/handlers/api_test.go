@@ -76,7 +76,9 @@ func newAPI(t *testing.T) *api {
 			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), userIDKey, id))
 		}
 	})
-	NewWatchlistHandler(watchlist.NewService(db, cat)).RegisterRoutes(g)
+	wl := watchlist.NewService(db, cat)
+	NewWatchlistHandler(wl).RegisterRoutes(g)
+	NewCollaborationHandler(wl).RegisterRoutes(g)
 	NewProgressHandler(progress.NewService(db, cat)).RegisterRoutes(g)
 	NewReviewHandler(reviews.NewService(db, cat)).RegisterRoutes(g)
 	return &api{t: t, db: db, router: r}
