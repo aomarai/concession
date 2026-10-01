@@ -1,6 +1,7 @@
 export interface User {
   id: string
   username: string
+  email?: string
   display_name: string
   avatar_url: string
 }
@@ -105,6 +106,8 @@ export interface Review {
   author: Author
   created_at: string
   updated_at: string
+  movie?: Movie
+  show?: Show
 }
 
 export interface ReviewInput {
@@ -192,4 +195,10 @@ export interface FriendEntry {
 export interface FriendRequests {
   incoming: FriendEntry[]
   outgoing: FriendEntry[]
+}
+
+export interface ProgressEntry extends Progress {
+  item_type: ListType
+  movie?: Movie
+  show?: Show
 }
