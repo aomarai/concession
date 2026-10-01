@@ -390,6 +390,12 @@ func TestPagination(t *testing.T) {
 			t.Errorf("mine %+v: %v", tc, err)
 		}
 	}
+	if _, err := e.svc.ListForTitle(ctx, domain.ReviewableMovies, 1, MaxPage+1, 10); !errors.Is(err, svcerr.ErrInvalid) {
+		t.Errorf("a page that would overflow the offset must be rejected: %v", err)
+	}
+	if _, err := e.svc.ListMine(ctx, uuid.New(), int(^uint(0)>>1), 100); !errors.Is(err, svcerr.ErrInvalid) {
+		t.Errorf("max int page: %v", err)
+	}
 	if _, perPage, err := normalizePage(1, 5000); err != nil || perPage != MaxPerPage {
 		t.Errorf("per_page should be clamped to %d, got %d, %v", MaxPerPage, perPage, err)
 	}

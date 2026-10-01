@@ -28,6 +28,9 @@ const (
 
 	DefaultPerPage = 20
 	MaxPerPage     = 100
+	// MaxPage bounds the page number so (page-1)*perPage cannot overflow into
+	// a negative OFFSET, which the database would reject with a 500.
+	MaxPage = 1_000_000
 )
 
 // Catalog resolves TMDB IDs to stored titles; *catalog.Service implements it.
@@ -126,6 +129,9 @@ func normalizePage(page, perPage int) (int, int, error) {
 	}
 	if page < 1 || perPage < 1 {
 		return 0, 0, svcerr.Invalid("page and per_page must be positive")
+	}
+	if page > MaxPage {
+		return 0, 0, svcerr.Invalid("page is too large")
 	}
 	return page, min(perPage, MaxPerPage), nil
 }

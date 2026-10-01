@@ -77,7 +77,7 @@ Ratings are whole numbers from 1 to 10. Reviews are visible to every signed-in u
 | PATCH | `/api/v1/reviews/:id` | Author only. Any of `rating`, `title`, `content`; omitted fields are unchanged |
 | DELETE | `/api/v1/reviews/:id` | Author only. `204` |
 
-Pagination: `page` defaults to 1 and `per_page` to 20 (maximum 100, larger values are clamped); non-numeric or non-positive values are `400`.
+Pagination: `page` defaults to 1 and `per_page` to 20 (maximum 100, larger values are clamped); non-numeric, non-positive or absurdly large (`page` over 1,000,000) values are `400`.
 
 ## CORS
 

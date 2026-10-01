@@ -31,17 +31,20 @@ func (h *ReviewHandler) RegisterRoutes(r gin.IRoutes) {
 
 // pageParams reads the optional page and per_page query parameters.
 func pageParams(c *gin.Context) (page, perPage int, ok bool) {
-	for name, dst := range map[string]*int{"page": &page, "per_page": &perPage} {
-		raw := c.Query(name)
+	for _, p := range []struct {
+		name string
+		dst  *int
+	}{{"page", &page}, {"per_page", &perPage}} {
+		raw := c.Query(p.name)
 		if raw == "" {
 			continue
 		}
 		n, err := strconv.Atoi(raw)
 		if err != nil {
-			RespondError(c, http.StatusBadRequest, "bad_request", "Invalid "+name)
+			RespondError(c, http.StatusBadRequest, "bad_request", "Invalid "+p.name)
 			return 0, 0, false
 		}
-		*dst = n
+		*p.dst = n
 	}
 	return page, perPage, true
 }

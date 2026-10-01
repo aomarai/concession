@@ -108,6 +108,8 @@ func TestReviewRequestErrors(t *testing.T) {
 		{"list: bad per_page", http.MethodGet, "/shows/1/reviews?per_page=x", nil, 400, "bad_request"},
 		{"list: negative page", http.MethodGet, "/movies/1/reviews?page=-1", nil, 400, "bad_request"},
 		{"mine: bad page", http.MethodGet, "/me/reviews?page=abc", nil, 400, "bad_request"},
+		{"mine: absurd page", http.MethodGet, "/me/reviews?page=9223372036854775807", nil, 400, "bad_request"},
+		{"list: both params bad", http.MethodGet, "/movies/1/reviews?page=a&per_page=b", nil, 400, "bad_request"},
 		{"get: malformed id", http.MethodGet, "/reviews/nope", nil, 400, "bad_request"},
 		{"get: unknown id", http.MethodGet, "/reviews/" + uuid.NewString(), nil, 404, "not_found"},
 		{"update: malformed id", http.MethodPatch, "/reviews/nope", map[string]any{}, 400, "bad_request"},
