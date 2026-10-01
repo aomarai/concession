@@ -20,9 +20,19 @@ func newCatalogRouter(t *testing.T) *gin.Engine {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/search/multi":
+			if r.URL.Query().Get("query") == "boom" {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			_, _ = w.Write([]byte(`{"page":1,"results":[{"id":603,"media_type":"movie","title":"The Matrix"}]}`))
 		case "/movie/603":
 			_, _ = w.Write([]byte(`{"id":603,"title":"The Matrix","genres":[],"credits":{"cast":[]}}`))
+		case "/tv/1396":
+			_, _ = w.Write([]byte(`{"id":1396,"name":"Breaking Bad","genres":[],"seasons":[{"season_number":1}],"external_ids":{"tvdb_id":81189}}`))
+		case "/tv/1396/season/1":
+			_, _ = w.Write([]byte(`{"season_number":1,"episodes":[{"episode_number":1,"name":"Pilot"}]}`))
+		case "/tv/500", "/tv/500/season/1":
+			w.WriteHeader(http.StatusInternalServerError)
 		case "/movie/500":
 			w.WriteHeader(http.StatusInternalServerError)
 		default:
@@ -65,6 +75,19 @@ func TestCatalogHandlers(t *testing.T) {
 		{"movie upstream failure", "/api/v1/movies/500", 502, "upstream_error"},
 		{"movie bad id", "/api/v1/movies/abc", 400, "bad_request"},
 		{"season bad number", "/api/v1/shows/1/seasons/x", 400, "bad_request"},
+		{"season negative number", "/api/v1/shows/1/seasons/-1", 400, "bad_request"},
+		{"show ok", "/api/v1/shows/1396", 200, ""},
+		{"show not found", "/api/v1/shows/999", 404, "not_found"},
+		{"show bad id", "/api/v1/shows/0", 400, "bad_request"},
+		{"show upstream failure", "/api/v1/shows/500", 502, "upstream_error"},
+		{"season ok", "/api/v1/shows/1396/seasons/1", 200, ""},
+		{"season bad show id", "/api/v1/shows/x/seasons/1", 400, "bad_request"},
+		{"season show not found", "/api/v1/shows/999/seasons/1", 404, "not_found"},
+		{"season upstream failure", "/api/v1/shows/500/seasons/1", 502, "upstream_error"},
+		{"search upstream failure", "/api/v1/search?q=boom", 502, "upstream_error"},
+		{"search non-numeric page", "/api/v1/search?q=x&page=abc", 400, "bad_request"},
+		{"search empty query", "/api/v1/search", 200, ""},
+		{"search with page", "/api/v1/search?q=matrix&page=2", 200, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,5 +114,25 @@ func TestMovieEndpointReturnsStoredMovie(t *testing.T) {
 	}
 	if m.ID == 0 || m.TMDBID != 603 {
 		t.Errorf("unexpected movie %+v", m)
+	}
+}
+
+func TestShowAndSeasonEndpointsReturnStoredData(t *testing.T) {
+	r := newCatalogRouter(t)
+
+	var show domain.Show
+	if err := json.Unmarshal(doGet(r, "/api/v1/shows/1396").Body.Bytes(), &show); err != nil {
+		t.Fatal(err)
+	}
+	if show.TVDBID == nil || *show.TVDBID != 81189 || len(show.Seasons) != 1 {
+		t.Errorf("unexpected show %+v", show)
+	}
+
+	var season domain.Season
+	if err := json.Unmarshal(doGet(r, "/api/v1/shows/1396/seasons/1").Body.Bytes(), &season); err != nil {
+		t.Fatal(err)
+	}
+	if len(season.Episodes) != 1 || season.Episodes[0].Title != "Pilot" {
+		t.Errorf("unexpected season %+v", season)
 	}
 }

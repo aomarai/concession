@@ -192,7 +192,7 @@ func (s *Service) EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, e
 			return err
 		}
 		for _, rs := range remote.Seasons {
-			if err := upsertSeason(tx, show.ID, rs.SeasonNumber, rs.Name, rs.Overview, rs.PosterPath, rs.AirDate); err != nil {
+			if _, err := upsertSeason(tx, show.ID, rs.SeasonNumber, rs.Name, rs.Overview, rs.PosterPath, rs.AirDate); err != nil {
 				return err
 			}
 		}
@@ -211,11 +211,11 @@ func (s *Service) EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, e
 	return &out, nil
 }
 
-func upsertSeason(tx *gorm.DB, showID uint64, number int, title, overview, poster, airDate string) (err error) {
+func upsertSeason(tx *gorm.DB, showID uint64, number int, title, overview, poster, airDate string) (domain.Season, error) {
 	var season domain.Season
-	err = tx.Where("show_id = ? AND season_number = ?", showID, number).First(&season).Error
+	err := tx.Where("show_id = ? AND season_number = ?", showID, number).First(&season).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return season, err
 	}
 	season.ShowID = showID
 	season.SeasonNumber = number
@@ -223,7 +223,7 @@ func upsertSeason(tx *gorm.DB, showID uint64, number int, title, overview, poste
 	season.Overview = overview
 	season.PosterPath = poster
 	season.AirDate = parseDate(airDate)
-	return tx.Omit("Episodes").Save(&season).Error
+	return season, tx.Omit("Episodes").Save(&season).Error
 }
 
 // EnsureSeason returns one season of a show (identified by the show's TMDB ID)
@@ -241,11 +241,8 @@ func (s *Service) EnsureSeason(ctx context.Context, showTMDBID int64, number int
 	db := s.DB.WithContext(ctx)
 	var seasonID uint64
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := upsertSeason(tx, show.ID, remote.SeasonNumber, remote.Name, remote.Overview, remote.PosterPath, remote.AirDate); err != nil {
-			return err
-		}
-		var season domain.Season
-		if err := tx.Where("show_id = ? AND season_number = ?", show.ID, remote.SeasonNumber).First(&season).Error; err != nil {
+		season, err := upsertSeason(tx, show.ID, remote.SeasonNumber, remote.Name, remote.Overview, remote.PosterPath, remote.AirDate)
+		if err != nil {
 			return err
 		}
 		seasonID = season.ID

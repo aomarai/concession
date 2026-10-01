@@ -139,11 +139,9 @@ func deleteWatchlistCascadeTx(tx *gorm.DB, watchlistID uuid.UUID) error {
 // outer type doesn't define one of the same name itself — defining
 // BeforeCreate directly on Watchlist means GORM calls THIS method instead
 // of BaseUUID's, full stop, not both. So this explicitly calls
-// w.BaseUUID.BeforeCreate(tx) first to keep ID generation working.
-func (w *Watchlist) BeforeCreate(tx *gorm.DB) error {
-	if err := w.BaseUUID.BeforeCreate(tx); err != nil {
-		return err
-	}
+// w.ensureID() first to keep ID generation working.
+func (w *Watchlist) BeforeCreate(_ *gorm.DB) error {
+	w.ensureID()
 	if w.ShareToken == "" {
 		token, err := generateShareToken()
 		if err != nil {
@@ -154,9 +152,12 @@ func (w *Watchlist) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// randRead is swapped in tests to simulate entropy failures.
+var randRead = rand.Read
+
 func generateShareToken() (string, error) {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := randRead(b); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil

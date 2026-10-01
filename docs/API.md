@@ -1,0 +1,41 @@
+# HTTP API
+
+Base path: `/api/v1` (except `/healthz`). All responses are JSON. Authenticated routes need the `session_token` cookie obtained by logging in.
+
+## Errors
+
+Every error uses the same shape:
+
+```json
+{ "error": { "code": "unauthorized", "message": "Unauthorized" } }
+```
+
+Codes in use: `bad_request` (400), `unauthorized` (401), `not_found` (404), `internal_error` (500), `upstream_error` (502), `unhealthy` (503).
+
+## Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/healthz` | no | Liveness + database ping. `200 {"status":"ok"}` or `503` |
+| GET | `/api/v1/auth/google/login` | no | Starts Google OAuth; sets `oauth_state` cookie and redirects to Google |
+| GET | `/api/v1/auth/google/callback` | no | Completes login; sets `session_token` cookie and redirects to `/` |
+| POST | `/api/v1/auth/logout` | no | Revokes the session and clears the cookie |
+| GET | `/api/v1/me` | yes | The current user |
+| GET | `/api/v1/search?q=&page=` | yes | Search movies and TV shows on TMDB (people are filtered out). Empty `q` returns no results. `page` ≥ 1 |
+| GET | `/api/v1/movies/:tmdb_id` | yes | A movie by TMDB ID, with genres and top-billed actors |
+| GET | `/api/v1/shows/:tmdb_id` | yes | A show by TMDB ID, with genres and season summaries |
+| GET | `/api/v1/shows/:tmdb_id/seasons/:season` | yes | One season of a show with its episodes (`season` 0 = specials) |
+
+### Catalog behavior
+
+- Titles are fetched from TMDB on first request and stored locally; later requests are served from the database. A stored title older than 24 hours is refreshed, and if TMDB is unreachable the stored copy is served instead.
+- The returned `id` is the internal ID used by watchlists and reviews; `tmdb_id` is the TMDB ID used in these URLs.
+- Movies are keyed by TMDB ID. Shows are keyed by TVDB ID (`tvdb_id`), read from TMDB's external IDs; it is `null` for the few shows TMDB has no TVDB ID for.
+- TMDB lookup failures: `404 not_found` when TMDB has no such title, `502 upstream_error` for any other TMDB problem.
+
+## CORS
+
+Origins listed in `CORS_ALLOWED_ORIGINS` may make credentialed requests (cookies). Others get no CORS headers.
+
+---
+*Keep this file in sync with `setupRouter` in `backend/cmd/server/main.go`; every new endpoint ships with its entry here.*

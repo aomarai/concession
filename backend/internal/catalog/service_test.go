@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,8 +36,19 @@ const seasonJSON = `{"season_number":1,"name":"Season 1","episodes":[
 
 func newTestService(t *testing.T, hits *atomic.Int32) *Service {
 	t.Helper()
+	return newUpstreamService(t, hits, &sync.Map{})
+}
+
+// newUpstreamService is newTestService with per-path status overrides: store
+// an int in status under a URL path to make the fake TMDB answer with it.
+func newUpstreamService(t *testing.T, hits *atomic.Int32, status *sync.Map) *Service {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
+		if code, ok := status.Load(r.URL.Path); ok {
+			w.WriteHeader(code.(int))
+			return
+		}
 		switch {
 		case r.URL.Path == "/movie/603":
 			_, _ = w.Write([]byte(movieJSON))

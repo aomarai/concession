@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -39,7 +40,13 @@ type Client struct {
 type Option func(*Client)
 
 // WithBaseURL overrides the API base URL (used by tests).
-func WithBaseURL(u string) Option { return func(c *Client) { c.baseURL = u } }
+func WithBaseURL(u string) Option {
+	return func(c *Client) {
+		if u != "" {
+			c.baseURL = strings.TrimRight(u, "/")
+		}
+	}
+}
 
 // WithHTTPClient overrides the HTTP client.
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }

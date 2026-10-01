@@ -17,11 +17,17 @@ type BaseUUID struct {
 }
 
 // BeforeCreate runs for any struct embedding BaseUUID
-func (base *BaseUUID) BeforeCreate(_ *gorm.DB) (err error) {
+func (base *BaseUUID) BeforeCreate(_ *gorm.DB) error {
+	base.ensureID()
+	return nil
+}
+
+// ensureID assigns a fresh UUID if none is set. It cannot fail, so types that
+// override BeforeCreate (e.g. Watchlist) call it directly.
+func (base *BaseUUID) ensureID() {
 	if base.ID == uuid.Nil {
 		base.ID = uuid.New()
 	}
-	return nil
 }
 
 // uniqueSQLiteDSN returns a SQLite in-memory DSN scoped to the current test
