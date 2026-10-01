@@ -105,6 +105,32 @@ Notifications are created by other actions and are only visible to their recipie
 | POST | `/api/v1/me/notifications/:id/read` | `204`; `404` for someone else's or an unknown notification |
 | POST | `/api/v1/me/notifications/read-all` | `{"marked": n}` |
 
+### Live updates
+
+`GET /api/v1/watchlists/:id/events` is a [server-sent events](https://developer.mozilla.org/docs/Web/API/Server-sent_events) stream: the browser keeps one connection open per list and is told when something changes, so collaborators see each other's edits without refreshing. Anyone who can read the list may listen (owner, collaborators, and anyone on a `public` list); everyone else gets the usual `404` JSON error and no stream. It uses the same session cookie as the rest of the API, so `new EventSource(url, { withCredentials: true })` works from an allowed CORS origin.
+
+Each message has an `event:` name and a small JSON `data:` payload saying **what changed, never the contents** — fetch the list again to see the new state:
+
+| `event` | Meaning | Extra fields |
+|---|---|---|
+| `ready` | The stream is open (sent first). Reconnect delay hint: `retry: 5000` | |
+| `item_added` | An item was added | `item_id` |
+| `item_updated` | An item's notes changed | `item_id` |
+| `item_removed` | An item was removed | `item_id` |
+| `items_reordered` | The order of the items changed | |
+| `list_updated` | Title, description or privacy changed | |
+| `members_changed` | An invitation was sent, accepted, declined, or a collaborator's role changed or they were removed | |
+| `list_deleted` | The list was deleted; the stream then ends | |
+| `resync` | The client read too slowly and some events were dropped. Refetch the list | |
+
+Event payloads (`type`, `list_id`, `actor_id`, `item_id?`, `at`) also carry who did it, so a client can ignore its own changes. Idle streams send a `: ping` comment every 25 seconds.
+
+- **Access is re-checked** whenever an event is delivered and on every heartbeat: a removed member, or everyone but the members once a public list turns private, stops receiving updates and the stream ends. A temporary database error does not end a stream.
+- **No replay:** missed events are not stored. After a reconnect, fetch the list again.
+- **Per server instance:** events reach only clients connected to the instance that handled the change. Running several instances needs a shared bus (not implemented).
+- **Reverse proxies** must not buffer or time out the response (the server sends `X-Accel-Buffering: no` for nginx; also raise `proxy_read_timeout`).
+- Streams are closed when the server shuts down.
+
 ### Watch progress
 
 Personal tracking, separate from watchlists. `:kind` is `movies` or `shows`; `:tmdb_id` is the TMDB ID.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/events"
 	"github.com/aomarai/concession/internal/friends"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
@@ -208,6 +210,7 @@ func TestSetupRouterRoutes(t *testing.T) {
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 		Notifs:    handlers.NewNotificationHandler(notifications.NewService(db)),
 		Friends:   handlers.NewFriendHandler(friends.NewService(db)),
+		Events:    handlers.NewEventsHandler(watchlistSvc, events.NewHub(), time.Minute),
 	}, logger)
 
 	cases := []struct {
@@ -223,6 +226,7 @@ func TestSetupRouterRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/me/reviews", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/me/notifications", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/friends", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/watchlists/00000000-0000-0000-0000-000000000000/events", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/movies/1/reviews", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/auth/logout", http.StatusOK},
 		{http.MethodGet, "/api/v1/auth/google/login", http.StatusTemporaryRedirect},
@@ -535,9 +539,58 @@ func TestRunEndToEndWithTMDB(t *testing.T) {
 				t.Errorf("my reviews = %d %s", code, b)
 			}
 
+			// Live updates: an open event stream receives the change made by another
+			// request and must not hold up a graceful shutdown.
+			// The client must stay connected through shutdown (not use the server's context),
+			// or it would hang up by itself and the test would prove nothing.
+			streamReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, base+"/api/v1/watchlists/"+listID+"/events", nil)
+			streamReq.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+			streamResp, err := http.DefaultClient.Do(streamReq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = streamResp.Body.Close() }()
+			if streamResp.StatusCode != http.StatusOK || !strings.HasPrefix(streamResp.Header.Get("Content-Type"), "text/event-stream") {
+				t.Fatalf("stream = %d %v", streamResp.StatusCode, streamResp.Header)
+			}
+			streamLines := make(chan string, 64)
+			go func() {
+				sc := bufio.NewScanner(streamResp.Body)
+				for sc.Scan() {
+					streamLines <- sc.Text()
+				}
+				close(streamLines)
+			}()
+			waitFor := func(substr string) {
+				t.Helper()
+				deadline := time.After(5 * time.Second)
+				for {
+					select {
+					case line, ok := <-streamLines:
+						if !ok {
+							t.Fatalf("stream closed before %q", substr)
+						}
+						if strings.Contains(line, substr) {
+							return
+						}
+					case <-deadline:
+						t.Fatalf("no %q on the stream", substr)
+					}
+				}
+			}
+			waitFor("event: ready")
+			if code, b := call(http.MethodPatch, "/api/v1/watchlists/"+listID, `{"title":"Renamed"}`); code != http.StatusOK {
+				t.Fatalf("rename = %d %s", code, b)
+			}
+			waitFor("event: list_updated")
+
+			started := time.Now()
 			cancel()
 			if err := <-done; err != nil {
 				t.Errorf("shutdown: %v", err)
+			}
+			if took := time.Since(started); took > 5*time.Second {
+				t.Errorf("an open event stream delayed shutdown by %v", took)
 			}
 		})
 	}
@@ -574,6 +627,7 @@ func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 		Notifs:    handlers.NewNotificationHandler(notifications.NewService(db)),
 		Friends:   handlers.NewFriendHandler(friends.NewService(db)),
+		Events:    handlers.NewEventsHandler(watchlistSvc, events.NewHub(), time.Minute),
 	}, logger)
 	r.GET("/boom", func(*gin.Context) { panic("kaboom") })
 

@@ -63,6 +63,10 @@ Conventions:
 
 Intentionally uncovered code (kept minimal): `main()` (a one-line `os.Exit(execute(nil))`) and the `Serve` failure branch in `run`, which cannot be triggered once the listener is bound.
 
+## Live updates (server-sent events)
+
+`internal/events` is an in-process hub; services publish events and `GET /api/v1/watchlists/:id/events` streams them. Try it with `curl -N -b "session_token=..." localhost:8080/api/v1/watchlists/<id>/events`. Because streams never finish by themselves, the server closes the hub at shutdown (`server.RegisterOnShutdown`); a test in `cmd/server` guards that. Tests that read a stream use `httptest.NewServer` and a client that parses `event:`/`data:` lines (see `internal/handlers/events_test.go`).
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and push to `main`: gofmt check, `go vet`, tests with race detector and the coverage gate; plus the frontend lint/build/test job once `frontend/package.json` exists.

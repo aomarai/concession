@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/events"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/userref"
 	"github.com/google/uuid"
@@ -125,6 +126,7 @@ func (s *Service) InviteUser(ctx context.Context, ownerID, id uuid.UUID, ref use
 		return nil, err
 	}
 	s.notify(ctx, target.ID, ownerID, domain.NotificationWatchlistInvite, w.Title, "/invites")
+	s.publish(events.MembersChanged, id, ownerID, nil)
 	return &Member{
 		Person: Person{ID: target.ID, DisplayName: target.DisplayName, AvatarURL: target.AvatarURL},
 		Role:   role, Status: domain.CollaboratorPending,
@@ -155,6 +157,7 @@ func (s *Service) SetRole(ctx context.Context, ownerID, id, targetID uuid.UUID, 
 	if res.RowsAffected == 0 {
 		return svcerr.ErrNotFound
 	}
+	s.publish(events.MembersChanged, id, ownerID, nil)
 	return nil
 }
 
@@ -181,6 +184,7 @@ func (s *Service) RemoveMember(ctx context.Context, actorID, id, targetID uuid.U
 	if res.RowsAffected == 0 {
 		return svcerr.ErrNotFound
 	}
+	s.publish(events.MembersChanged, id, actorID, nil)
 	return nil
 }
 
@@ -249,6 +253,7 @@ func (s *Service) AcceptInvite(ctx context.Context, userID, inviteID uuid.UUID) 
 	if err != nil {
 		return err
 	}
+	s.publish(events.MembersChanged, c.WatchlistID, userID, nil)
 	if c.InvitedBy != nil {
 		var w domain.Watchlist
 		// Best effort: a missing title only makes the message less specific.
@@ -264,5 +269,9 @@ func (s *Service) DeclineInvite(ctx context.Context, userID, inviteID uuid.UUID)
 	if err != nil {
 		return err
 	}
-	return s.DB.WithContext(ctx).Unscoped().Where("id = ?", c.ID).Delete(&domain.Collaborator{}).Error
+	if err := s.DB.WithContext(ctx).Unscoped().Where("id = ?", c.ID).Delete(&domain.Collaborator{}).Error; err != nil {
+		return err
+	}
+	s.publish(events.MembersChanged, c.WatchlistID, userID, nil)
+	return nil
 }
