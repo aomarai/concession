@@ -52,7 +52,8 @@ go tool cover -html=coverage.out   # browse uncovered lines
 Conventions:
 
 - Tests use in-memory SQLite via `internal/testutil.NewDB`; never call real external APIs (use `httptest` servers).
-- To test database failure paths, use `testutil.FailOn(t, db, "create"|"query"|"update"|"delete", "<table>")`.
+- To test database failure paths, use `testutil.FailOn(t, db, "create"|"query"|"update"|"delete"|"row", "<table>")` (`"row"` covers `Scan`/`Row` queries), or `testutil.FailAfter(..., n)` to let the first n calls succeed. Table names are GORM's (e.g. `o_auth_accounts`).
+- Tests that run goroutines against the database use `testutil.NewFileDB` (WAL file); shared in-memory SQLite fails concurrent cross-table access with "table is locked".
 - Randomness sources are package variables (`randRead`) so entropy failures can be simulated.
 - New code should land with tests; the goal is ~100% statement coverage.
 

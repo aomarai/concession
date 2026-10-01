@@ -11,7 +11,7 @@ type row struct {
 }
 
 func TestFailOn(t *testing.T) {
-	for _, op := range []string{"create", "query", "update", "delete"} {
+	for _, op := range []string{"create", "query", "update", "delete", "row"} {
 		t.Run(op, func(t *testing.T) {
 			db := NewDB(t, &row{})
 			base := row{Name: "a"}
@@ -30,6 +30,9 @@ func TestFailOn(t *testing.T) {
 				err = db.Model(&base).Update("name", "c").Error
 			case "delete":
 				err = db.Delete(&base).Error
+			case "row":
+				var n int64
+				err = db.Model(&row{}).Select("COUNT(*)").Scan(&n).Error
 			}
 			if !errors.Is(err, ErrInjected) {
 				t.Errorf("expected ErrInjected, got %v", err)
@@ -56,5 +59,17 @@ func TestFailAfter(t *testing.T) {
 	}
 	if err := db.Create(&row{Name: "bad"}).Error; !errors.Is(err, ErrInjected) {
 		t.Errorf("expected ErrInjected, got %v", err)
+	}
+}
+
+func TestNewFileDB(t *testing.T) {
+	db := NewFileDB(t, &row{})
+	if err := db.Create(&row{Name: "x"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	db.Model(&row{}).Count(&n)
+	if n != 1 {
+		t.Errorf("count = %d", n)
 	}
 }

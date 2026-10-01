@@ -1,13 +1,10 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/aomarai/concession/internal/catalog"
-	"github.com/aomarai/concession/internal/logging"
-	"github.com/aomarai/concession/internal/tmdb"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,14 +24,7 @@ func (h *CatalogHandler) RegisterRoutes(r gin.IRoutes) {
 	r.GET("/shows/:tmdb_id/seasons/:season", h.GetSeason)
 }
 
-func (h *CatalogHandler) fail(c *gin.Context, err error) {
-	if errors.Is(err, tmdb.ErrNotFound) {
-		RespondError(c, http.StatusNotFound, "not_found", "Title not found")
-		return
-	}
-	logging.FromContext(c.Request.Context()).Error("catalog request failed", "error", err)
-	RespondError(c, http.StatusBadGateway, "upstream_error", "Could not load title data")
-}
+func (h *CatalogHandler) fail(c *gin.Context, err error) { RespondServiceError(c, err) }
 
 func parseID(c *gin.Context, name string) (int64, bool) {
 	id, err := strconv.ParseInt(c.Param(name), 10, 64)

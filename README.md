@@ -2,7 +2,7 @@
 
 A movie and TV show watchlist app. Track what you want to watch, review what you've seen, and share lists with friends.
 
-**Status:** under active development. The backend has Google login, a TMDB-backed catalog (search, movies, shows, seasons), and the full data model; watchlists, reviews, sharing and the web UI are planned. Progress is tracked in the GitHub issues (one per phase) — see [Roadmap](#roadmap).
+**Status:** under active development. The backend has Google login, a TMDB-backed catalog (search, movies, shows, seasons), watchlists (create, items, reorder) with owner/editor/viewer roles, and per-user watch progress; reviews, sharing and the web UI are planned. Progress is tracked in the GitHub issues (one per phase) — see [Roadmap](#roadmap).
 
 ## Stack
 

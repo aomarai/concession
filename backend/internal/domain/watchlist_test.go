@@ -207,6 +207,22 @@ func TestCollaboratorBeforeCreateGeneratesID(t *testing.T) {
 
 // ---- WatchlistItem ----------------------------------------------------------
 
+func TestWatchlistItemPartialUpdatesAreNotValidated(t *testing.T) {
+	db := setupWatchlistTestDB(t)
+	item := WatchlistItem{WatchlistID: uuid.New(), AddedByID: uuid.New(), ItemType: WatchlistTypeMovie, MovieID: ptrUint64(1)}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&WatchlistItem{}).Where("id = ?", item.ID).Update("position", 5).Error; err != nil {
+		t.Fatalf("partial update must not run create-time validation: %v", err)
+	}
+	var got WatchlistItem
+	db.First(&got, "id = ?", item.ID)
+	if got.Position != 5 {
+		t.Errorf("position = %d", got.Position)
+	}
+}
+
 func TestWatchlistItemValidation(t *testing.T) {
 	db := setupWatchlistTestDB(t)
 

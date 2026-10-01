@@ -6,7 +6,6 @@ import (
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/logging"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -21,10 +20,8 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 func (u *UserHandler) HandleGetMe(c *gin.Context) {
 	logger := logging.FromContext(c.Request.Context())
 
-	userID, ok := c.Request.Context().Value(userIDKey).(uuid.UUID)
+	userID, ok := currentUserID(c)
 	if !ok {
-		logger.Error("user_id missing from context on authenticated route")
-		RespondError(c, http.StatusInternalServerError, "internal_error", "Internal error")
 		return
 	}
 

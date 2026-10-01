@@ -4,6 +4,7 @@ package testutil
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -38,10 +39,33 @@ func NewDB(t *testing.T, models ...any) *gorm.DB {
 	return db
 }
 
+// NewFileDB is NewDB backed by a temporary WAL-mode file instead of shared
+// in-memory SQLite, which fails concurrent cross-table access with "table is
+// locked". Use it for tests that run goroutines against the database.
+func NewFileDB(t *testing.T, models ...any) *gorm.DB {
+	t.Helper()
+	dsn := filepath.Join(t.TempDir(), "test.db") + "?_busy_timeout=10000&_journal_mode=WAL&_txlock=immediate"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
+	if err != nil {
+		t.Fatalf("open sqlite file: %v", err)
+	}
+	if len(models) > 0 {
+		if err := db.AutoMigrate(models...); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	return db
+}
+
 var callbackSeq atomic.Int64
 
 // FailOn makes every gorm operation of the given kind ("create", "query",
-// "update" or "delete") against table return ErrInjected.
+// "update", "delete" or "row") against table return ErrInjected.
 func FailOn(t *testing.T, db *gorm.DB, op, table string) {
 	t.Helper()
 	FailAfter(t, db, op, table, 0)
@@ -69,6 +93,8 @@ func FailAfter(t *testing.T, db *gorm.DB, op, table string, n int) {
 		err = db.Callback().Update().Before("gorm:update").Register(name, fn)
 	case "delete":
 		err = db.Callback().Delete().Before("gorm:delete").Register(name, fn)
+	case "row": // Scan and Row queries do not go through the query callbacks
+		err = db.Callback().Row().Before("gorm:row").Register(name, fn)
 	default:
 		t.Fatalf("unknown op %q", op)
 	}
