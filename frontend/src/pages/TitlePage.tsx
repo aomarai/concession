@@ -112,7 +112,17 @@ function ProgressControls({ kind, tmdbId, progress }: { kind: TitleKind; tmdbId:
     onSuccess: refresh,
   })
   const clear = useMutation({ mutationFn: () => clearProgress(kind, tmdbId), onSuccess: refresh })
+  const [invalid, setInvalid] = useState(false)
+  const busy = save.isPending || clear.isPending
   const error = [save, clear].find((m) => m.isError)?.error
+
+  function saveProgress(status: WatchStatus) {
+    const s = season === '' ? 0 : Number(season)
+    const e = episode === '' ? 0 : Number(episode)
+    if (!Number.isInteger(s) || !Number.isInteger(e) || s < 0 || e < 0) return setInvalid(true)
+    setInvalid(false)
+    save.mutate({ status, last_season_num: s, last_episode_num: e })
+  }
 
   function changeStatus(value: string) {
     if (value === '') {
@@ -129,7 +139,7 @@ function ProgressControls({ kind, tmdbId, progress }: { kind: TitleKind; tmdbId:
     <div className="space-y-2">
       <label className="flex flex-col text-sm">
         Your status
-        <select value={progress?.status ?? ''} onChange={(e) => changeStatus(e.target.value)} className="w-44 rounded bg-zinc-800 px-2 py-1">
+        <select value={progress?.status ?? ''} disabled={busy} onChange={(e) => changeStatus(e.target.value)} className="w-44 rounded bg-zinc-800 px-2 py-1">
           <option value="">Not tracking</option>
           {STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -144,14 +154,12 @@ function ProgressControls({ kind, tmdbId, progress }: { kind: TitleKind; tmdbId:
             Episode
             <input type="number" min={0} value={episode} onChange={(e) => setEpisode(e.target.value)} className="w-20 rounded bg-zinc-800 px-2 py-1" />
           </label>
-          <button
-            onClick={() => save.mutate({ status: progress.status, last_season_num: Number(season) || 0, last_episode_num: Number(episode) || 0 })}
-            className="rounded bg-zinc-800 px-3 py-1 text-sm"
-          >
+          <button onClick={() => saveProgress(progress.status)} disabled={busy} className="rounded bg-zinc-800 px-3 py-1 text-sm disabled:opacity-50">
             Save progress
           </button>
         </div>
       )}
+      {invalid && <Alert message="Season and episode must be whole numbers, 0 or more." />}
       {error !== undefined && <Alert message={errorMessage(error)} />}
     </div>
   )

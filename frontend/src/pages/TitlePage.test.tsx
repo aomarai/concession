@@ -305,7 +305,11 @@ describe('TitlePage watch progress', () => {
     await waitFor(() => expect(screen.getByLabelText('Your status')).toHaveValue('watching'))
     await userEvent.clear(season)
     await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
-    expect(api.setProgress).toHaveBeenCalledWith('shows', 1396, { status: 'watching', last_season_num: 0, last_episode_num: 0 })
+    expect(api.setProgress).toHaveBeenLastCalledWith('shows', 1396, { status: 'watching', last_season_num: 0, last_episode_num: 0 })
+    await userEvent.type(season, '2')
+    await userEvent.clear(screen.getByLabelText('Episode'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    expect(api.setProgress).toHaveBeenLastCalledWith('shows', 1396, { status: 'watching', last_season_num: 2, last_episode_num: 0 })
   })
 
   it('shows save errors', async () => {
@@ -319,5 +323,30 @@ describe('TitlePage watch progress', () => {
     vi.mocked(api.getProgress).mockRejectedValue(new ApiError(500, 'internal', 'progress broke'))
     renderTitle()
     expect(await screen.findByText('progress broke')).toBeInTheDocument()
+  })
+
+  it('disables the controls while a save is in flight', async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 1, last_episode_num: 1 })
+    vi.mocked(api.setProgress).mockReturnValue(new Promise(() => {}))
+    renderTitle('shows')
+    const select = await screen.findByLabelText('Your status')
+    await waitFor(() => expect(select).toHaveValue('watching'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    await waitFor(() => expect(select).toBeDisabled())
+    expect(screen.getByRole('button', { name: 'Save progress' })).toBeDisabled()
+  })
+
+  it.each([['-1', '2'], ['2', '1.5']])('rejects season %s / episode %s without calling the API', async (season, episode) => {
+    vi.mocked(api.getProgress).mockResolvedValue({ status: 'watching', last_season_num: 1, last_episode_num: 1 })
+    renderTitle('shows')
+    const seasonBox = await screen.findByLabelText('Season')
+    await waitFor(() => expect(seasonBox).toHaveValue(1))
+    await userEvent.clear(seasonBox)
+    await userEvent.type(seasonBox, season)
+    await userEvent.clear(screen.getByLabelText('Episode'))
+    await userEvent.type(screen.getByLabelText('Episode'), episode)
+    await userEvent.click(screen.getByRole('button', { name: 'Save progress' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/whole numbers/i)
+    expect(api.setProgress).not.toHaveBeenCalled()
   })
 })
