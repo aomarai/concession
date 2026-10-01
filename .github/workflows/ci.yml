@@ -33,18 +33,27 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('frontend/package.json') != '' }}
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+      - name: Detect frontend
+        id: detect
+        run: |
+          if [ -f frontend/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "No frontend yet; skipping."; fi
       - uses: actions/setup-node@v4
+        if: steps.detect.outputs.present == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm run lint --if-present
-      - run: npm run build
-      - run: npm test --if-present
+      - if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm ci
+      - if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run lint --if-present
+      - if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run build
+      - if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm test --if-present
