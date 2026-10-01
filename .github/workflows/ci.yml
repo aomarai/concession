@@ -57,3 +57,22 @@ jobs:
       - if: steps.detect.outputs.present == 'true'
         working-directory: frontend
         run: npm test --if-present
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images and start the full stack (Postgres + API + frontend)
+        run: docker compose --profile app up -d --build --wait --wait-timeout 240
+      - name: Smoke test through the frontend container
+        run: |
+          curl -fsS http://localhost:8080/healthz
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsS http://localhost:8080/lists/some-id | grep -q '<div id="root">'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/me)" = 401
+      - name: Container logs
+        if: failure()
+        run: docker compose --profile app logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose --profile app down -v

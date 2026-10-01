@@ -7,7 +7,7 @@ A movie and TV show watchlist app. Track what you want to watch, review what you
 ## Stack
 
 - **Backend:** Go, Gin, GORM (PostgreSQL in production, SQLite for local dev and tests)
-- **Frontend:** React + TypeScript + Vite + Tailwind + React Query (Phase 5 in progress: sign-in, search, lists, title pages and reviews done; see `docs/DEVELOPMENT.md`)
+- **Frontend:** React + TypeScript + Vite + Tailwind + React Query (sign-in, search, lists, titles, reviews, sharing, notifications and live updates; see `docs/DEVELOPMENT.md`). Run everything with `docker compose --profile app up --build`
 - **Data:** movies and TV metadata from [TMDB](https://www.themoviedb.org/); movies are keyed by TMDB ID, shows by TVDB ID
 
 ## Quick start
@@ -32,7 +32,7 @@ Contributor/AI-agent conventions: [AGENTS.md](AGENTS.md).
 | 2 | Watchlists and watch progress |
 | 3 | Reviews and ratings |
 | 4 | Sharing, collaboration, notifications, live updates |
-| 5 | Frontend |
+| 5 | Frontend (done) |
 | 6 | Polish and deployment |
 
 ## License
