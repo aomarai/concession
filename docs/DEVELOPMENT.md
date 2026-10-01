@@ -63,6 +63,18 @@ Conventions:
 
 Intentionally uncovered code (kept minimal): `main()` (a one-line `os.Exit(execute(nil))`) and the `Serve` failure branch in `run`, which cannot be triggered once the listener is bound.
 
+## Frontend
+
+```sh
+cd frontend
+npm ci
+npm run dev        # http://localhost:5173, proxies /api to $BACKEND_URL (default http://localhost:8080)
+npm test           # Vitest + Testing Library, enforces 100% coverage
+npm run lint && npm run build
+```
+
+Sign in with Google through the backend (`/api/v1/auth/google/login`); because the dev server proxies `/api`, the session cookie stays same-origin. Tests mock `src/api/endpoints` and never touch a network. Write the test first, then the component.
+
 ## Live updates (server-sent events)
 
 `internal/events` is an in-process hub; services publish events and `GET /api/v1/watchlists/:id/events` streams them. Try it with `curl -N -b "session_token=..." localhost:8080/api/v1/watchlists/<id>/events`. Because streams never finish by themselves, the server closes the hub at shutdown (`server.RegisterOnShutdown`); a test in `cmd/server` guards that. Tests that read a stream use `httptest.NewServer` and a client that parses `event:`/`data:` lines (see `internal/handlers/events_test.go`).

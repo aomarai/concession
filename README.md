@@ -7,7 +7,7 @@ A movie and TV show watchlist app. Track what you want to watch, review what you
 ## Stack
 
 - **Backend:** Go, Gin, GORM (PostgreSQL in production, SQLite for local dev and tests)
-- **Frontend:** React + TypeScript + Vite + Tailwind + React Query (planned, Phase 5)
+- **Frontend:** React + TypeScript + Vite + Tailwind + React Query (Phase 5 in progress: sign-in, search and lists done; see `docs/DEVELOPMENT.md`)
 - **Data:** movies and TV metadata from [TMDB](https://www.themoviedb.org/); movies are keyed by TMDB ID, shows by TVDB ID
 
 ## Quick start
