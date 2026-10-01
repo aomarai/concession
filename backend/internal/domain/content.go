@@ -44,12 +44,12 @@ func DeleteShowCascade(ctx context.Context, db *gorm.DB, showID uint64) error {
 
 type Review struct {
 	BaseUUID
-	UserID         uuid.UUID      `json:"user_id" gorm:"type:uuid;not null;index"`
-	Rating         uint8          `json:"rating" gorm:"not null"` // e.g. 1-10 or 1-5
+	UserID         uuid.UUID      `json:"user_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_review_user_item"`
+	Rating         uint8          `json:"rating" gorm:"not null"` // 1-10
 	Title          string         `json:"title"`
 	Content        string         `json:"content"`
-	ReviewableID   uint64         `json:"reviewable_id" gorm:"not null;index"`
-	ReviewableType ReviewableItem `json:"reviewable_type" gorm:"type:varchar(20);default:'movie';not null;index"` // "movie" or "show"
+	ReviewableID   uint64         `json:"reviewable_id" gorm:"not null;index;uniqueIndex:idx_review_user_item"`
+	ReviewableType ReviewableItem `json:"reviewable_type" gorm:"type:varchar(20);default:'movie';not null;index;uniqueIndex:idx_review_user_item"` // "movie" or "show"
 
 	// Relationships
 	User User `json:"user" gorm:"foreignKey:UserID"`

@@ -128,14 +128,7 @@ func (s *Service) Set(ctx context.Context, userID uuid.UUID, kind domain.ItemTyp
 
 // titleID finds the internal ID of an already stored title by TMDB ID.
 func (s *Service) titleID(ctx context.Context, kind domain.ItemType, tmdbID int64) (uint64, error) {
-	var id uint64
-	var err error
-	db := s.DB.WithContext(ctx)
-	if kind == domain.ItemTypeMovie {
-		err = db.Model(&domain.Movie{}).Select("id").Where("tmdb_id = ?", tmdbID).Take(&id).Error
-	} else {
-		err = db.Model(&domain.Show{}).Select("id").Where("tmdb_id = ?", tmdbID).Take(&id).Error
-	}
+	id, err := domain.StoredTitleID(ctx, s.DB, kind, tmdbID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, svcerr.ErrNotFound
 	}
@@ -217,26 +210,9 @@ func (s *Service) attach(ctx context.Context, rows []domain.UserWatchProgress) (
 			showIDs = append(showIDs, r.ItemID)
 		}
 	}
-	db := s.DB.WithContext(ctx)
-	movies := map[uint64]*domain.Movie{}
-	shows := map[uint64]*domain.Show{}
-	if len(movieIDs) > 0 {
-		var ms []domain.Movie
-		if err := db.Where("id IN ?", movieIDs).Find(&ms).Error; err != nil {
-			return nil, err
-		}
-		for i := range ms {
-			movies[ms[i].ID] = &ms[i]
-		}
-	}
-	if len(showIDs) > 0 {
-		var ss []domain.Show
-		if err := db.Where("id IN ?", showIDs).Find(&ss).Error; err != nil {
-			return nil, err
-		}
-		for i := range ss {
-			shows[ss[i].ID] = &ss[i]
-		}
+	movies, shows, err := domain.LoadTitles(ctx, s.DB, movieIDs, showIDs)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]View, len(rows))
 	for i, r := range rows {

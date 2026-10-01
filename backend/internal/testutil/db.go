@@ -21,7 +21,9 @@ var ErrInjected = errors.New("injected test failure")
 // can insert rows without building full object graphs.
 func NewDB(t *testing.T, models ...any) *gorm.DB {
 	t.Helper()
-	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	// The sequence number keeps databases apart when one test calls NewDB more
+	// than once, or is repeated with -count=N.
+	dsn := fmt.Sprintf("file:%s_%d?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"), dbSeq.Add(1))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -62,7 +64,10 @@ func NewFileDB(t *testing.T, models ...any) *gorm.DB {
 	return db
 }
 
-var callbackSeq atomic.Int64
+var (
+	callbackSeq atomic.Int64
+	dbSeq       atomic.Int64
+)
 
 // FailOn makes every gorm operation of the given kind ("create", "query",
 // "update", "delete" or "row") against table return ErrInjected.

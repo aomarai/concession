@@ -23,6 +23,7 @@ import (
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
 	"github.com/aomarai/concession/internal/progress"
+	"github.com/aomarai/concession/internal/reviews"
 	"github.com/aomarai/concession/internal/testutil"
 	"github.com/aomarai/concession/internal/tmdb"
 	"github.com/aomarai/concession/internal/watchlist"
@@ -200,6 +201,7 @@ func TestSetupRouterRoutes(t *testing.T) {
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
 		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
+		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 	}, logger)
 
 	cases := []struct {
@@ -212,6 +214,8 @@ func TestSetupRouterRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/movies/1", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/watchlists", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/me/progress", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/me/reviews", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/movies/1/reviews", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/auth/logout", http.StatusOK},
 		{http.MethodGet, "/api/v1/auth/google/login", http.StatusTemporaryRedirect},
 		{http.MethodGet, "/api/v1/nope", http.StatusNotFound},
@@ -441,6 +445,22 @@ func TestRunEndToEndWithTMDB(t *testing.T) {
 				t.Errorf("list progress = %d %s", code, b)
 			}
 
+			// Review flow: rate the movie, then read the title's reviews and summary.
+			code, b := call(http.MethodPost, "/api/v1/movies/603/reviews", `{"rating":9,"title":"Great","content":"Loved it"}`)
+			if code != http.StatusCreated {
+				t.Fatalf("create review = %d %s", code, b)
+			}
+			if code, b := call(http.MethodPost, "/api/v1/movies/603/reviews", `{"rating":5}`); code != http.StatusConflict {
+				t.Errorf("second review = %d %s, want 409", code, b)
+			}
+			if code, b := call(http.MethodGet, "/api/v1/movies/603/reviews", ""); code != http.StatusOK ||
+				!strings.Contains(b, `"average":9`) || !strings.Contains(b, "Loved it") {
+				t.Errorf("list reviews = %d %s", code, b)
+			}
+			if code, b := call(http.MethodGet, "/api/v1/me/reviews", ""); code != http.StatusOK || !strings.Contains(b, "The Matrix") {
+				t.Errorf("my reviews = %d %s", code, b)
+			}
+
 			cancel()
 			if err := <-done; err != nil {
 				t.Errorf("shutdown: %v", err)
@@ -475,6 +495,7 @@ func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
 		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
+		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 	}, logger)
 	r.GET("/boom", func(*gin.Context) { panic("kaboom") })
 

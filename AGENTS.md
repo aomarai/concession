@@ -21,6 +21,7 @@ concession/
 │       ├── domain/         # GORM models + cascade delete helpers
 │       ├── watchlist/      # Watchlist/item CRUD, ordering and role checks (owner/editor/viewer)
 │       ├── progress/       # Per-user watch status and show season/episode progress
+│       ├── reviews/        # Ratings (1-10) and reviews; one per user per title; author-only edits
 │       ├── svcerr/         # Sentinel errors services return; mapped to HTTP in handlers
 │       ├── keyedlock/      # Per-key mutexes to make check-then-write sequences atomic
 │       ├── handlers/       # Gin handlers and middleware (auth, CORS, health, errors)
@@ -38,6 +39,7 @@ concession/
 - Pass `c.Request.Context()` through to services/DB (`db.WithContext(ctx)`) so cancellation works.
 - Use `logging.FromContext(ctx)` for logs; log structured key/values, never secrets.
 - Models embed `domain.BaseUUID` (UUID PK, soft delete). Soft deletes do not fire FK cascades, so use the `Delete*Cascade` helpers.
+- Reviews are hard-deleted (so the unique user+title index allows re-reviewing); watchlists, items and other models soft-delete.
 - Titles: metadata comes from TMDB and both movies and shows are looked up by TMDB ID. Shows also store a nullable, unique `TVDBID` (read from TMDB `external_ids`) as their TVDB external key.
 - `WatchlistItem` must reference exactly one of movie/show matching `ItemType` (enforced in `BeforeSave`).
 - Login is Google OAuth only (no passwords).
