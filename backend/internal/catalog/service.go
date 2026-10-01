@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/keyedlock"
 	"github.com/aomarai/concession/internal/tmdb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -21,50 +21,22 @@ const freshFor = 24 * time.Hour
 
 const maxActors = 10
 
+// ErrUpstream marks failures talking to TMDB (as opposed to TMDB saying a
+// title does not exist, which stays tmdb.ErrNotFound, or local DB errors).
+var ErrUpstream = errors.New("catalog: TMDB request failed")
+
+func upstream(err error) error {
+	if err == nil || errors.Is(err, tmdb.ErrNotFound) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrUpstream, err)
+}
+
 type Service struct {
 	DB   *gorm.DB
 	TMDB *tmdb.Client
 
-	locks keyedLocks
-}
-
-// keyedLocks serializes work per key so concurrent requests for the same
-// title do a single fetch-and-store instead of racing on the unique indexes
-// (or creating duplicate season/episode rows). Entries are reference-counted
-// and removed when idle.
-type keyedLocks struct {
-	mu sync.Mutex
-	m  map[string]*keyedLock
-}
-
-type keyedLock struct {
-	mu   sync.Mutex
-	refs int
-}
-
-// lock blocks until the key is free and returns the function that releases it.
-func (k *keyedLocks) lock(key string) (unlock func()) {
-	k.mu.Lock()
-	if k.m == nil {
-		k.m = make(map[string]*keyedLock)
-	}
-	l, ok := k.m[key]
-	if !ok {
-		l = &keyedLock{}
-		k.m[key] = l
-	}
-	l.refs++
-	k.mu.Unlock()
-
-	l.mu.Lock()
-	return func() {
-		l.mu.Unlock()
-		k.mu.Lock()
-		if l.refs--; l.refs == 0 {
-			delete(k.m, key)
-		}
-		k.mu.Unlock()
-	}
+	locks keyedlock.Locks
 }
 
 func NewService(db *gorm.DB, client *tmdb.Client) *Service {
@@ -114,14 +86,15 @@ func (s *Service) Search(ctx context.Context, query string, page int) (*tmdb.Sea
 	if query == "" {
 		return &tmdb.SearchResponse{Results: []tmdb.SearchResult{}}, nil
 	}
-	return s.TMDB.SearchMulti(ctx, query, page)
+	res, err := s.TMDB.SearchMulti(ctx, query, page)
+	return res, upstream(err)
 }
 
 // SyncGenres stores the current TMDB movie and TV genre lists.
 func (s *Service) SyncGenres(ctx context.Context) error {
 	genres, err := s.TMDB.Genres(ctx)
 	if err != nil {
-		return err
+		return upstream(err)
 	}
 	return upsertGenres(s.DB.WithContext(ctx), toGenres(genres))
 }
@@ -129,7 +102,7 @@ func (s *Service) SyncGenres(ctx context.Context) error {
 // EnsureMovie returns the movie with the given TMDB ID, fetching and storing
 // it if it is missing or stale.
 func (s *Service) EnsureMovie(ctx context.Context, tmdbID int64) (*domain.Movie, error) {
-	defer s.locks.lock(fmt.Sprintf("movie:%d", tmdbID))()
+	defer s.locks.Lock(fmt.Sprintf("movie:%d", tmdbID))()
 	db := s.DB.WithContext(ctx)
 
 	var existing domain.Movie
@@ -146,7 +119,7 @@ func (s *Service) EnsureMovie(ctx context.Context, tmdbID int64) (*domain.Movie,
 		if existing.ID != 0 && !errors.Is(err, tmdb.ErrNotFound) {
 			return &existing, nil // serve stale data if TMDB is unavailable
 		}
-		return nil, err
+		return nil, upstream(err)
 	}
 
 	movie := existing // keeps ID/CreatedAt on refresh
@@ -190,7 +163,7 @@ func (s *Service) EnsureMovie(ctx context.Context, tmdbID int64) (*domain.Movie,
 // (with season summaries) if it is missing or stale. The TVDB ID is taken from
 // TMDB's external IDs.
 func (s *Service) EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, error) {
-	defer s.locks.lock(fmt.Sprintf("show:%d", tmdbID))()
+	defer s.locks.Lock(fmt.Sprintf("show:%d", tmdbID))()
 	db := s.DB.WithContext(ctx)
 
 	var existing domain.Show
@@ -209,7 +182,7 @@ func (s *Service) EnsureShow(ctx context.Context, tmdbID int64) (*domain.Show, e
 		if existing.ID != 0 && !errors.Is(err, tmdb.ErrNotFound) {
 			return &existing, nil
 		}
-		return nil, err
+		return nil, upstream(err)
 	}
 
 	show := existing
@@ -311,7 +284,7 @@ func (s *Service) EnsureSeason(ctx context.Context, showTMDBID int64, number int
 	if err != nil {
 		return nil, err
 	}
-	defer s.locks.lock(fmt.Sprintf("season:%d:%d", showTMDBID, number))()
+	defer s.locks.Lock(fmt.Sprintf("season:%d:%d", showTMDBID, number))()
 	remote, err := s.TMDB.GetSeason(ctx, showTMDBID, number)
 	if err != nil {
 		if !errors.Is(err, tmdb.ErrNotFound) {
@@ -319,7 +292,7 @@ func (s *Service) EnsureSeason(ctx context.Context, showTMDBID int64, number int
 				return stored, nil // TMDB is unavailable: serve the stored copy
 			}
 		}
-		return nil, err
+		return nil, upstream(err)
 	}
 
 	db := s.DB.WithContext(ctx)

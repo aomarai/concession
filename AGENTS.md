@@ -19,6 +19,10 @@ concession/
 │       ├── tmdb/           # TMDB v3 API client (bearer token, TTL cache)
 │       ├── config/         # Env config (go-envconfig), OAuth config
 │       ├── domain/         # GORM models + cascade delete helpers
+│       ├── watchlist/      # Watchlist/item CRUD, ordering and role checks (owner/editor/viewer)
+│       ├── progress/       # Per-user watch status and show season/episode progress
+│       ├── svcerr/         # Sentinel errors services return; mapped to HTTP in handlers
+│       ├── keyedlock/      # Per-key mutexes to make check-then-write sequences atomic
 │       ├── handlers/       # Gin handlers and middleware (auth, CORS, health, errors)
 │       ├── logging/        # slog JSON logger + request middleware
 │       └── testutil/       # Shared test helpers (in-memory DB, failure injection)
@@ -29,7 +33,8 @@ concession/
 ## Conventions
 
 - Routes live under `/api/v1`, registered in `setupRouter` in `cmd/server/main.go`. `/healthz` is outside the prefix.
-- Errors: always use `handlers.RespondError(c, status, code, message)` → `{"error":{"code","message"}}`.
+- Errors: always use `handlers.RespondError(c, status, code, message)` → `{"error":{"code","message"}}`. Services return `svcerr` sentinels (or `catalog.ErrUpstream`); handlers map them with `handlers.RespondServiceError`. Non-members get 404 (not 403) so private lists are not revealed.
+- Services take small interfaces (e.g. `watchlist.Catalog`) so tests can fake TMDB; use `keyedlock` for read-then-write sequences and DB constraints for cross-process safety.
 - Pass `c.Request.Context()` through to services/DB (`db.WithContext(ctx)`) so cancellation works.
 - Use `logging.FromContext(ctx)` for logs; log structured key/values, never secrets.
 - Models embed `domain.BaseUUID` (UUID PK, soft delete). Soft deletes do not fire FK cascades, so use the `Delete*Cascade` helpers.

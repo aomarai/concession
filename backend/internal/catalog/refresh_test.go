@@ -147,8 +147,8 @@ func TestConcurrentRequestsDoNotDuplicateOrFail(t *testing.T) {
 	if counts["movies"] != 1 || counts["shows"] != 1 || counts["seasons"] != 2 || counts["episodes"] != 2 {
 		t.Errorf("duplicate rows created: %v", counts)
 	}
-	if len(s.locks.m) != 0 {
-		t.Errorf("idle locks should be released, %d left", len(s.locks.m))
+	if s.locks.Len() != 0 {
+		t.Errorf("idle locks should be released, %d left", s.locks.Len())
 	}
 }
 

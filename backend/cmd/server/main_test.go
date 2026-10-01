@@ -22,8 +22,10 @@ import (
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/progress"
 	"github.com/aomarai/concession/internal/testutil"
 	"github.com/aomarai/concession/internal/tmdb"
+	"github.com/aomarai/concession/internal/watchlist"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -191,7 +193,14 @@ func TestSetupRouterRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	logger := logging.NewLogger(&config.Config{Environment: "test"})
-	r := setupRouter(db, cfg, handlers.NewAuthHandler(db, cfg), handlers.NewUserHandler(db), handlers.NewCatalogHandler(catalog.NewService(db, tmdb.NewClient("t"))), logger)
+	catalogSvc := catalog.NewService(db, tmdb.NewClient("t"))
+	r := setupRouter(db, cfg, apiHandlers{
+		Auth:      handlers.NewAuthHandler(db, cfg),
+		User:      handlers.NewUserHandler(db),
+		Catalog:   handlers.NewCatalogHandler(catalogSvc),
+		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
+		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
+	}, logger)
 
 	cases := []struct {
 		method, path string
@@ -201,6 +210,8 @@ func TestSetupRouterRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/me", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/search?q=x", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/movies/1", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/watchlists", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/me/progress", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/auth/logout", http.StatusOK},
 		{http.MethodGet, "/api/v1/auth/google/login", http.StatusTemporaryRedirect},
 		{http.MethodGet, "/api/v1/nope", http.StatusNotFound},
@@ -326,6 +337,8 @@ func fakeTMDB(t *testing.T, genreStatus int) (*httptest.Server, *atomic.Int32) {
 				return
 			}
 			_, _ = io.WriteString(w, `{"genres":[{"id":28,"name":"Action"}]}`)
+		case r.URL.Path == "/movie/603":
+			_, _ = io.WriteString(w, `{"id":603,"title":"The Matrix","release_date":"1999-03-30","genres":[{"id":28,"name":"Action"}]}`)
 		case r.URL.Path == "/search/multi":
 			_, _ = io.WriteString(w, `{"page":1,"results":[{"id":603,"media_type":"movie","title":"The Matrix"}]}`)
 		default:
@@ -390,12 +403,60 @@ func TestRunEndToEndWithTMDB(t *testing.T) {
 				t.Errorf("search = %d %s", resp.StatusCode, body)
 			}
 
+			call := func(method, path, body string) (int, string) {
+				req, _ := http.NewRequest(method, base+path, strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = resp.Body.Close() }()
+				b, _ := io.ReadAll(resp.Body)
+				return resp.StatusCode, string(b)
+			}
+
+			// Watchlist flow: create a list, add a movie (fetched from TMDB), read it back.
+			code, body2 := call(http.MethodPost, "/api/v1/watchlists", `{"title":"Friday","type":"movie"}`)
+			if code != http.StatusCreated {
+				t.Fatalf("create list = %d %s", code, body2)
+			}
+			listID := jsonField(t, body2, "id")
+			if code, b := call(http.MethodPost, "/api/v1/watchlists/"+listID+"/items", `{"tmdb_id":603}`); code != http.StatusCreated {
+				t.Fatalf("add item = %d %s", code, b)
+			}
+			if code, b := call(http.MethodGet, "/api/v1/watchlists/"+listID, ""); code != http.StatusOK || !strings.Contains(b, "The Matrix") {
+				t.Errorf("get list = %d %s", code, b)
+			}
+			// New users get starter lists; this user was created directly so only ours exists.
+			if code, b := call(http.MethodGet, "/api/v1/watchlists", ""); code != http.StatusOK || !strings.Contains(b, `"item_count":1`) {
+				t.Errorf("list lists = %d %s", code, b)
+			}
+
+			// Progress flow.
+			if code, b := call(http.MethodPut, "/api/v1/me/progress/movies/603", `{"status":"completed"}`); code != http.StatusOK {
+				t.Errorf("set progress = %d %s", code, b)
+			}
+			if code, b := call(http.MethodGet, "/api/v1/me/progress?status=completed", ""); code != http.StatusOK || !strings.Contains(b, "The Matrix") {
+				t.Errorf("list progress = %d %s", code, b)
+			}
+
 			cancel()
 			if err := <-done; err != nil {
 				t.Errorf("shutdown: %v", err)
 			}
 		})
 	}
+}
+
+func jsonField(t *testing.T, body, field string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		t.Fatalf("decode %q: %v", body, err)
+	}
+	s, _ := m[field].(string)
+	return s
 }
 
 func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
@@ -407,8 +468,14 @@ func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 	}
 	defer closeGormDB(db)
 	logger := logging.NewLogger(&config.Config{Environment: "test"})
-	r := setupRouter(db, cfg, handlers.NewAuthHandler(db, cfg), handlers.NewUserHandler(db),
-		handlers.NewCatalogHandler(catalog.NewService(db, tmdb.NewClient("t"))), logger)
+	catalogSvc := catalog.NewService(db, tmdb.NewClient("t"))
+	r := setupRouter(db, cfg, apiHandlers{
+		Auth:      handlers.NewAuthHandler(db, cfg),
+		User:      handlers.NewUserHandler(db),
+		Catalog:   handlers.NewCatalogHandler(catalogSvc),
+		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
+		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
+	}, logger)
 	r.GET("/boom", func(*gin.Context) { panic("kaboom") })
 
 	for _, tc := range []struct {

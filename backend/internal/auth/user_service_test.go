@@ -12,7 +12,7 @@ import (
 var googleInfo = GoogleUserInfo{ID: "g-1", Email: "a@example.com", VerifiedEmail: true, Name: "Ann", Picture: "http://pic"}
 
 func TestFindOrCreateGoogleUserCreatesThenFinds(t *testing.T) {
-	db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{})
+	db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{}, &domain.Watchlist{})
 	svc := NewUserAuthService(db)
 	ctx := context.Background()
 
@@ -31,6 +31,13 @@ func TestFindOrCreateGoogleUserCreatesThenFinds(t *testing.T) {
 	if found.ID != created.ID {
 		t.Errorf("expected same user, got %v and %v", found.ID, created.ID)
 	}
+	var lists []domain.Watchlist
+	if err := db.Where("owner_id = ?", created.ID).Order("title").Find(&lists).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(lists) != 2 || lists[0].Title != "Movies to watch" || lists[1].Title != "Shows to watch" {
+		t.Errorf("expected the two starter lists, got %+v", lists)
+	}
 	var users, accounts int64
 	db.Model(&domain.User{}).Count(&users)
 	db.Model(&domain.OAuthAccount{}).Count(&accounts)
@@ -45,12 +52,12 @@ func TestFindOrCreateGoogleUserErrors(t *testing.T) {
 		setup func(t *testing.T) *UserAuthService
 	}{
 		{"oauth lookup fails", func(t *testing.T) *UserAuthService {
-			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{})
+			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{}, &domain.Watchlist{})
 			testutil.FailOn(t, db, "query", "o_auth_accounts")
 			return NewUserAuthService(db)
 		}},
 		{"linked user lookup fails", func(t *testing.T) *UserAuthService {
-			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{})
+			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{}, &domain.Watchlist{})
 			if _, err := NewUserAuthService(db).FindOrCreateGoogleUser(context.Background(), googleInfo); err != nil {
 				t.Fatal(err)
 			}
@@ -58,12 +65,17 @@ func TestFindOrCreateGoogleUserErrors(t *testing.T) {
 			return NewUserAuthService(db)
 		}},
 		{"user create fails", func(t *testing.T) *UserAuthService {
-			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{})
+			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{}, &domain.Watchlist{})
 			testutil.FailOn(t, db, "create", "users")
 			return NewUserAuthService(db)
 		}},
+		{"starter list create fails", func(t *testing.T) *UserAuthService {
+			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{}, &domain.Watchlist{})
+			testutil.FailOn(t, db, "create", "watchlists")
+			return NewUserAuthService(db)
+		}},
 		{"oauth account create fails", func(t *testing.T) *UserAuthService {
-			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{})
+			db := testutil.NewDB(t, &domain.User{}, &domain.OAuthAccount{}, &domain.Watchlist{})
 			testutil.FailOn(t, db, "create", "o_auth_accounts")
 			return NewUserAuthService(db)
 		}},
@@ -75,7 +87,7 @@ func TestFindOrCreateGoogleUserErrors(t *testing.T) {
 			if !errors.Is(err, testutil.ErrInjected) || user != nil {
 				t.Errorf("expected injected error and nil user, got %v, %v", user, err)
 			}
-			if tc.name == "oauth account create fails" {
+			if tc.name == "oauth account create fails" || tc.name == "starter list create fails" {
 				var n int64
 				svc.DB.Model(&domain.User{}).Count(&n)
 				if n != 0 {

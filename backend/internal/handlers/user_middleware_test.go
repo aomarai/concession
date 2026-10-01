@@ -18,7 +18,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func authModels() []any { return []any{&domain.User{}, &domain.OAuthAccount{}, &domain.Session{}} }
+func authModels() []any {
+	return []any{&domain.User{}, &domain.OAuthAccount{}, &domain.Session{}, &domain.Watchlist{}}
+}
 
 func newMeRouter(t *testing.T, db *gorm.DB) *gin.Engine {
 	t.Helper()

@@ -17,7 +17,9 @@ import (
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/progress"
 	"github.com/aomarai/concession/internal/tmdb"
+	"github.com/aomarai/concession/internal/watchlist"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -54,7 +56,16 @@ func initDB(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, catalogHandler *handlers.CatalogHandler, logger *slog.Logger) *gin.Engine {
+// apiHandlers groups the HTTP handlers mounted by setupRouter.
+type apiHandlers struct {
+	Auth      *handlers.AuthHandler
+	User      *handlers.UserHandler
+	Catalog   *handlers.CatalogHandler
+	Watchlist *handlers.WatchlistHandler
+	Progress  *handlers.ProgressHandler
+}
+
+func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Logger) *gin.Engine {
 	// Use gin.New() instead of gin.Default() to avoid Gin's built-in logger
 	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
 	// We explicitly add only the recovery middleware and our structured logger.
@@ -80,15 +91,17 @@ func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHand
 	apiV1 := r.Group("/api/v1")
 
 	// Public routes
-	apiV1.GET("/auth/google/login", authHandler.HandleGoogleLogin)
-	apiV1.GET("/auth/google/callback", authHandler.HandleGoogleCallback)
-	apiV1.POST("/auth/logout", authHandler.HandleLogout)
+	apiV1.GET("/auth/google/login", h.Auth.HandleGoogleLogin)
+	apiV1.GET("/auth/google/callback", h.Auth.HandleGoogleCallback)
+	apiV1.POST("/auth/logout", h.Auth.HandleLogout)
 
 	// Authenticated routes
 	auth := apiV1.Group("/")
-	auth.Use(authHandler.AuthMiddleware())
-	auth.GET("/me", userHandler.HandleGetMe)
-	catalogHandler.RegisterRoutes(auth)
+	auth.Use(h.Auth.AuthMiddleware())
+	auth.GET("/me", h.User.HandleGetMe)
+	h.Catalog.RegisterRoutes(auth)
+	h.Watchlist.RegisterRoutes(auth)
+	h.Progress.RegisterRoutes(auth)
 
 	return r
 }
@@ -193,7 +206,13 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 			}
 		}()
 	}
-	engine := setupRouter(db, cfg, authHandler, userHandler, handlers.NewCatalogHandler(catalogSvc), logger)
+	engine := setupRouter(db, cfg, apiHandlers{
+		Auth:      authHandler,
+		User:      userHandler,
+		Catalog:   handlers.NewCatalogHandler(catalogSvc),
+		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
+		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
+	}, logger)
 
 	port := cfg.Port
 	if port == "" {

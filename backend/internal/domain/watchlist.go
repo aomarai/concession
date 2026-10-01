@@ -71,10 +71,15 @@ type WatchlistItem struct {
 // exactly one title, or the referenced title does not match ItemType.
 var ErrInvalidWatchlistItem = errors.New("watchlist item must reference exactly one movie or show matching its item_type")
 
-// BeforeSave enforces that exactly one of MovieID/ShowID is set and that it
+// BeforeCreate enforces that exactly one of MovieID/ShowID is set and that it
 // agrees with ItemType. This is checked in code (rather than a DB CHECK) so
-// it behaves identically on Postgres and SQLite.
-func (i *WatchlistItem) BeforeSave(_ *gorm.DB) error {
+// it behaves identically on Postgres and SQLite. It runs on create only:
+// partial updates (e.g. changing Position via Model(&WatchlistItem{}).Update)
+// operate on an empty struct and must not be validated, and an item's
+// identity never changes after creation. Defining BeforeCreate here replaces
+// the one promoted from BaseUUID, so ID generation is repeated.
+func (i *WatchlistItem) BeforeCreate(_ *gorm.DB) error {
+	i.ensureID()
 	switch i.ItemType {
 	case WatchlistTypeMovie:
 		if i.MovieID == nil || i.ShowID != nil {
