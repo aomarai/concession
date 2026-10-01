@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,8 +45,12 @@ func (base *BaseUUID) ensureID() {
 // that happens to run in the same process. That's what caused
 // TestHandleGoogleCallback's session counts to include leftover sessions
 // from unrelated tests.
+var dsnSeq atomic.Int64
+
 func uniqueSQLiteDSN(t *testing.T) string {
 	t.Helper()
 	name := strings.ReplaceAll(t.Name(), "/", "_")
-	return "file:" + name + "?mode=memory&cache=shared"
+	// The sequence number keeps reruns (-count=N) in one process from
+	// reopening a previous run's still-alive in-memory database.
+	return fmt.Sprintf("file:%s_%d?mode=memory&cache=shared", name, dsnSeq.Add(1))
 }

@@ -10,7 +10,7 @@ Every error uses the same shape:
 { "error": { "code": "unauthorized", "message": "Unauthorized" } }
 ```
 
-Codes in use: `bad_request` (400), `unauthorized` (401), `not_found` (404), `internal_error` (500), `unhealthy` (503).
+Codes in use: `bad_request` (400), `unauthorized` (401), `not_found` (404; also returned for unknown routes), `method_not_allowed` (405), `internal_error` (500; also returned if a handler panics), `upstream_error` (502), `unhealthy` (503).
 
 ## Endpoints
 
@@ -21,6 +21,19 @@ Codes in use: `bad_request` (400), `unauthorized` (401), `not_found` (404), `int
 | GET | `/api/v1/auth/google/callback` | no | Completes login; sets `session_token` cookie and redirects to `/` |
 | POST | `/api/v1/auth/logout` | no | Revokes the session and clears the cookie |
 | GET | `/api/v1/me` | yes | The current user |
+| GET | `/api/v1/search?q=&page=` | yes | Search movies and TV shows on TMDB (people are filtered out). Empty `q` returns no results. `page` ≥ 1 |
+| GET | `/api/v1/movies/:tmdb_id` | yes | A movie by TMDB ID, with genres and top-billed actors |
+| GET | `/api/v1/shows/:tmdb_id` | yes | A show by TMDB ID, with genres and season summaries |
+| GET | `/api/v1/shows/:tmdb_id/seasons/:season` | yes | One season of a show with its episodes (`season` 0 = specials) |
+
+### Catalog behavior
+
+- Titles are fetched from TMDB on first request and stored locally; later requests are served from the database. A stored title older than 24 hours is refreshed, and if TMDB is unreachable the stored copy is served instead.
+- The returned `id` is the internal ID used by watchlists and reviews; `tmdb_id` is the TMDB ID used in these URLs.
+- Both movies and shows are addressed by TMDB ID in URLs (`tmdb_id`). Shows also carry a `tvdb_id`, read from TMDB's external IDs and stored as a unique, optional external key; it is `null` for the few shows TMDB has no TVDB ID for.
+- Refreshing a show or season also removes seasons and episodes TMDB no longer lists (an empty TMDB answer removes nothing). A season is served from the stored copy if TMDB is unreachable.
+- Concurrent requests for the same title are serialized per process, so a title is fetched and stored once.
+- TMDB lookup failures: `404 not_found` when TMDB has no such title, `502 upstream_error` for any other TMDB problem.
 
 ## CORS
 

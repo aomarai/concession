@@ -28,7 +28,7 @@ func count(t *testing.T, db *gorm.DB, model any, query string, args ...any) int6
 
 func seedShow(t *testing.T, db *gorm.DB) (Show, Season, Episode) {
 	t.Helper()
-	show := Show{Name: "S", TVDBID: 1}
+	show := Show{Name: "S", TVDBID: ptrInt64(1)}
 	season := Season{SeasonNumber: 1}
 	if err := db.Create(&show).Error; err != nil {
 		t.Fatal(err)

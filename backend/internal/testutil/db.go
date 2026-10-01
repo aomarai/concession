@@ -44,9 +44,18 @@ var callbackSeq atomic.Int64
 // "update" or "delete") against table return ErrInjected.
 func FailOn(t *testing.T, db *gorm.DB, op, table string) {
 	t.Helper()
+	FailAfter(t, db, op, table, 0)
+}
+
+// FailAfter lets the first n matching operations succeed and fails every one
+// after that. Use it to reach error paths that follow an earlier successful
+// call to the same table.
+func FailAfter(t *testing.T, db *gorm.DB, op, table string, n int) {
+	t.Helper()
 	name := fmt.Sprintf("testutil:fail:%d", callbackSeq.Add(1))
+	var seen atomic.Int64
 	fn := func(tx *gorm.DB) {
-		if tx.Statement.Table == table {
+		if tx.Statement.Table == table && seen.Add(1) > int64(n) {
 			_ = tx.AddError(ErrInjected)
 		}
 	}

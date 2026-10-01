@@ -28,7 +28,10 @@ All settings are environment variables (a `backend/.env` file is loaded if prese
 | `COOKIE_SAME_SITE` | `lax` (default), `strict`, `none` (requires `COOKIE_SECURE=true`) |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_REDIRECT_URL` | Google OAuth login |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins (default `http://localhost:5173`) |
-| `TMDB_READ_ACCESS_TOKEN` | TMDB v4 "API Read Access Token" (Phase 1) |
+| `TMDB_READ_ACCESS_TOKEN` | TMDB v4 "API Read Access Token" (bearer). Without it the catalog endpoints fail with 502 and the server logs a warning |
+| `TMDB_BASE_URL` | Override the TMDB API URL (tests/proxies); default `https://api.themoviedb.org/3` |
+
+Get a TMDB token at <https://www.themoviedb.org/settings/api> (use the "API Read Access Token", not the v3 API key). Genres are synced from TMDB at startup when a token is set.
 
 Never commit secrets; keep them in `backend/.env` or your environment.
 

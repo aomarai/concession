@@ -11,15 +11,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/aomarai/concession/internal/auth"
+	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
 	"github.com/aomarai/concession/internal/testutil"
+	"github.com/aomarai/concession/internal/tmdb"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -187,7 +191,7 @@ func TestSetupRouterRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	logger := logging.NewLogger(&config.Config{Environment: "test"})
-	r := setupRouter(db, cfg, handlers.NewAuthHandler(db, cfg), handlers.NewUserHandler(db), logger)
+	r := setupRouter(db, cfg, handlers.NewAuthHandler(db, cfg), handlers.NewUserHandler(db), handlers.NewCatalogHandler(catalog.NewService(db, tmdb.NewClient("t"))), logger)
 
 	cases := []struct {
 		method, path string
@@ -195,6 +199,8 @@ func TestSetupRouterRoutes(t *testing.T) {
 	}{
 		{http.MethodGet, "/healthz", http.StatusOK},
 		{http.MethodGet, "/api/v1/me", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/search?q=x", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/movies/1", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/auth/logout", http.StatusOK},
 		{http.MethodGet, "/api/v1/auth/google/login", http.StatusTemporaryRedirect},
 		{http.MethodGet, "/api/v1/nope", http.StatusNotFound},
@@ -302,6 +308,96 @@ func TestInitDBMigrationFailure(t *testing.T) {
 	}
 }
 
+// fakeTMDB serves just enough of the TMDB API for end-to-end tests and counts
+// genre requests so tests can wait for the startup sync.
+func fakeTMDB(t *testing.T, genreStatus int) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var genreHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/genre/"):
+			genreHits.Add(1)
+			if genreStatus != http.StatusOK {
+				w.WriteHeader(genreStatus)
+				return
+			}
+			_, _ = io.WriteString(w, `{"genres":[{"id":28,"name":"Action"}]}`)
+		case r.URL.Path == "/search/multi":
+			_, _ = io.WriteString(w, `{"page":1,"results":[{"id":603,"media_type":"movie","title":"The Matrix"}]}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &genreHits
+}
+
+func TestRunEndToEndWithTMDB(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		genreStatus int
+	}{{"genre sync ok", http.StatusOK}, {"genre sync fails but server still runs", http.StatusInternalServerError}} {
+		t.Run(tc.name, func(t *testing.T) {
+			serverEnv(t)
+			tmdbSrv, genreHits := fakeTMDB(t, tc.genreStatus)
+			t.Setenv("TMDB_READ_ACCESS_TOKEN", "test-token")
+			t.Setenv("TMDB_BASE_URL", tmdbSrv.URL)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			addrCh := make(chan net.Addr, 1)
+			done := make(chan error, 1)
+			go func() { done <- run(ctx, func(a net.Addr) { addrCh <- a }) }()
+			base := "http://127.0.0.1:" + portOf(<-addrCh)
+
+			// Wait for the startup genre sync to reach the fake TMDB.
+			deadline := time.Now().Add(5 * time.Second)
+			for genreHits.Load() == 0 && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if genreHits.Load() == 0 {
+				t.Fatal("genre sync never called TMDB")
+			}
+
+			// Log in by creating a session directly in the app's (shared in-memory) DB.
+			db, err := initDB(&config.Config{DBDriver: "sqlite", DBPath: os.Getenv("DB_PATH")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeDB(db)
+			user := domain.User{Username: "e2e", Email: "e2e@example.com", DisplayName: "E2E"}
+			if err := db.Create(&user).Error; err != nil {
+				t.Fatal(err)
+			}
+			token, err := auth.CreateSession(ctx, db, user.ID, "ua", "ip")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			req, _ := http.NewRequest(http.MethodGet, base+"/api/v1/search?q=matrix", nil)
+			req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "The Matrix") {
+				t.Errorf("search = %d %s", resp.StatusCode, body)
+			}
+
+			cancel()
+			if err := <-done; err != nil {
+				t.Errorf("shutdown: %v", err)
+			}
+		})
+	}
+}
+
 func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{SessionCookieName: "session_token"}
@@ -311,7 +407,8 @@ func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 	}
 	defer closeGormDB(db)
 	logger := logging.NewLogger(&config.Config{Environment: "test"})
-	r := setupRouter(db, cfg, handlers.NewAuthHandler(db, cfg), handlers.NewUserHandler(db), logger)
+	r := setupRouter(db, cfg, handlers.NewAuthHandler(db, cfg), handlers.NewUserHandler(db),
+		handlers.NewCatalogHandler(catalog.NewService(db, tmdb.NewClient("t"))), logger)
 	r.GET("/boom", func(*gin.Context) { panic("kaboom") })
 
 	for _, tc := range []struct {

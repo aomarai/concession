@@ -116,6 +116,9 @@ type Config struct {
 
 	// TMDBReadAccessToken is the TMDB v4 "API Read Access Token" (bearer).
 	TMDBReadAccessToken string `env:"TMDB_READ_ACCESS_TOKEN"`
+
+	// TMDBBaseURL overrides the TMDB API base URL (tests, proxies). Empty = default.
+	TMDBBaseURL string `env:"TMDB_BASE_URL"`
 }
 
 func Load(ctx context.Context) (*Config, error) {

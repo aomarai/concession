@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/tmdb"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -52,7 +54,7 @@ func initDB(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, logger *slog.Logger) *gin.Engine {
+func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, catalogHandler *handlers.CatalogHandler, logger *slog.Logger) *gin.Engine {
 	// Use gin.New() instead of gin.Default() to avoid Gin's built-in logger
 	// middleware producing duplicate request logs alongside GinRequestLoggerMiddleware.
 	// We explicitly add only the recovery middleware and our structured logger.
@@ -86,6 +88,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, authHandler *handlers.AuthHand
 	auth := apiV1.Group("/")
 	auth.Use(authHandler.AuthMiddleware())
 	auth.GET("/me", userHandler.HandleGetMe)
+	catalogHandler.RegisterRoutes(auth)
 
 	return r
 }
@@ -154,6 +157,13 @@ func execute(ready func(net.Addr)) int {
 	return 0
 }
 
+// closeDB releases the database connection pool on shutdown.
+func closeDB(db *gorm.DB) {
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+}
+
 // run wires up config, database, and routes, then serves until ctx is
 // cancelled. If ready is non-nil it is called with the listening address once
 // the server is accepting connections (used by tests with PORT=0).
@@ -168,10 +178,22 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 	if err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
+	defer closeDB(db)
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
-	engine := setupRouter(db, cfg, authHandler, userHandler, logger)
+	if cfg.TMDBReadAccessToken == "" {
+		logger.Warn("TMDB_READ_ACCESS_TOKEN is not set; catalog endpoints will fail")
+	}
+	catalogSvc := catalog.NewService(db, tmdb.NewClient(cfg.TMDBReadAccessToken, tmdb.WithBaseURL(cfg.TMDBBaseURL)))
+	if cfg.TMDBReadAccessToken != "" {
+		go func() {
+			if err := catalogSvc.SyncGenres(ctx); err != nil {
+				logger.Warn("genre sync failed", "error", err)
+			}
+		}()
+	}
+	engine := setupRouter(db, cfg, authHandler, userHandler, handlers.NewCatalogHandler(catalogSvc), logger)
 
 	port := cfg.Port
 	if port == "" {

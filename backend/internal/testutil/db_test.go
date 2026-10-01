@@ -45,3 +45,16 @@ func TestFailOnOtherTableUnaffected(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+func TestFailAfter(t *testing.T) {
+	db := NewDB(t, &row{})
+	FailAfter(t, db, "create", "rows", 2)
+	for i := 0; i < 2; i++ {
+		if err := db.Create(&row{Name: "ok"}).Error; err != nil {
+			t.Fatalf("create %d should succeed: %v", i, err)
+		}
+	}
+	if err := db.Create(&row{Name: "bad"}).Error; !errors.Is(err, ErrInjected) {
+		t.Errorf("expected ErrInjected, got %v", err)
+	}
+}
