@@ -10,9 +10,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/events"
 	"github.com/aomarai/concession/internal/friends"
 	"github.com/aomarai/concession/internal/notifications"
 	"github.com/aomarai/concession/internal/progress"
@@ -60,6 +62,7 @@ type api struct {
 	t      *testing.T
 	db     *gorm.DB
 	router *gin.Engine
+	hub    *events.Hub
 }
 
 // newAPI mounts the watchlist and progress routes behind a stub auth
@@ -84,13 +87,16 @@ func newAPI(t *testing.T) *api {
 	wl.Notifier = notifs
 	fs := friends.NewService(db)
 	fs.Notifier = notifs
+	hub := events.NewHub()
+	wl.Events = hub
+	NewEventsHandler(wl, hub, 30*time.Millisecond).RegisterRoutes(g)
 	NewNotificationHandler(notifs).RegisterRoutes(g)
 	NewFriendHandler(fs).RegisterRoutes(g)
 	NewWatchlistHandler(wl).RegisterRoutes(g)
 	NewCollaborationHandler(wl).RegisterRoutes(g)
 	NewProgressHandler(progress.NewService(db, cat)).RegisterRoutes(g)
 	NewReviewHandler(reviews.NewService(db, cat)).RegisterRoutes(g)
-	return &api{t: t, db: db, router: r}
+	return &api{t: t, db: db, router: r, hub: hub}
 }
 
 func (a *api) do(user uuid.UUID, method, path string, body any) *httptest.ResponseRecorder {

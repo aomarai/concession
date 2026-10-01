@@ -15,6 +15,7 @@ import (
 	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/config"
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/events"
 	"github.com/aomarai/concession/internal/friends"
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
@@ -70,6 +71,7 @@ type apiHandlers struct {
 	Reviews   *handlers.ReviewHandler
 	Notifs    *handlers.NotificationHandler
 	Friends   *handlers.FriendHandler
+	Events    *handlers.EventsHandler
 }
 
 func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Logger) *gin.Engine {
@@ -113,6 +115,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 	h.Reviews.RegisterRoutes(auth)
 	h.Notifs.RegisterRoutes(auth)
 	h.Friends.RegisterRoutes(auth)
+	h.Events.RegisterRoutes(auth)
 
 	return r
 }
@@ -221,6 +224,8 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 	notificationSvc := notifications.NewService(db)
 	watchlistSvc := watchlist.NewService(db, catalogSvc)
 	watchlistSvc.Notifier = notificationSvc
+	hub := events.NewHub()
+	watchlistSvc.Events = hub
 	friendSvc := friends.NewService(db)
 	friendSvc.Notifier = notificationSvc
 	engine := setupRouter(db, cfg, apiHandlers{
@@ -233,6 +238,7 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 		Notifs:    handlers.NewNotificationHandler(notificationSvc),
 		Friends:   handlers.NewFriendHandler(friendSvc),
+		Events:    handlers.NewEventsHandler(watchlistSvc, hub, handlers.DefaultHeartbeat),
 	}, logger)
 
 	port := cfg.Port
@@ -249,6 +255,9 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 	}
 
 	server := &http.Server{Handler: engine, ReadHeaderTimeout: 10 * time.Second, ConnState: connStateHook}
+	// Open event streams never finish on their own, so end them at shutdown or
+	// Shutdown would wait for them until its timeout.
+	server.RegisterOnShutdown(hub.Close)
 
 	// Graceful shutdown: use Shutdown() so in-flight requests can complete
 	// before the server exits, reducing client-visible errors on deployment.

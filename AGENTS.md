@@ -22,6 +22,7 @@ concession/
 │       ├── watchlist/      # Watchlist/item CRUD, ordering and role checks (owner/editor/viewer)
 │       ├── progress/       # Per-user watch status and show season/episode progress
 │       ├── reviews/        # Ratings (1-10) and reviews; one per user per title; author-only edits
+│       ├── events/         # In-process pub/sub hub behind the live-update (SSE) stream
 │       ├── friends/        # Friend requests and the friends list (one Friendship row per user pair)
 │       ├── notifications/  # Per-user notifications; other services create them via a Notifier interface
 │       ├── userref/        # Resolve a user by username, e-mail or ID
@@ -43,6 +44,7 @@ concession/
 - Pass `c.Request.Context()` through to services/DB (`db.WithContext(ctx)`) so cancellation works.
 - Use `logging.FromContext(ctx)` for logs; log structured key/values, never secrets.
 - Models embed `domain.BaseUUID` (UUID PK, soft delete). Soft deletes do not fire FK cascades, so use the `Delete*Cascade` helpers.
+- Live updates: services publish tiny change events (what changed, never contents) through a nil-safe `Publisher` after a *successful* write; the SSE handler re-checks access per event and only ends a stream on "not found", not on transient DB errors. Streams must end at shutdown (hub.Close).
 - People in API responses are always `domain.PublicUser` (id, display name, avatar), never e-mail. Notifications are best-effort side effects: services call a nil-safe `Notifier` and log failures instead of failing the action.
 - Friendships use a canonical user pair (`domain.OrderedPair`) with a unique index; declining/cancelling/unfriending hard-deletes the row.
 - Collaborators are hard-deleted on removal/decline (unique list+user index), so people can be re-invited; invitations are `Collaborator` rows with status `pending`.

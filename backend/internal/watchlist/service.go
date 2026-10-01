@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/events"
 	"github.com/aomarai/concession/internal/keyedlock"
 	"github.com/aomarai/concession/internal/logging"
 	"github.com/aomarai/concession/internal/svcerr"
@@ -35,12 +36,34 @@ type Notifier interface {
 	Notify(ctx context.Context, userID, actorID uuid.UUID, typ domain.NotificationType, subject, link string) error
 }
 
+// Publisher receives live-update events; *events.Hub implements it. It may be
+// nil.
+type Publisher interface {
+	Publish(ev events.Event)
+}
+
 type Service struct {
 	DB       *gorm.DB
 	Catalog  Catalog
 	Notifier Notifier
+	Events   Publisher
 
 	locks keyedlock.Locks
+}
+
+// publish announces a change to a watchlist to connected clients.
+func (s *Service) publish(typ string, listID, actor uuid.UUID, item *uuid.UUID) {
+	if s.Events != nil {
+		s.Events.Publish(events.Event{Type: typ, ListID: listID, ActorID: actor, ItemID: item})
+	}
+}
+
+// CanView reports whether the user may read the watchlist (ErrNotFound if
+// not). Live-update streams use it to authorize and to re-check access while
+// a stream is open.
+func (s *Service) CanView(ctx context.Context, userID, id uuid.UUID) error {
+	_, _, err := s.access(ctx, userID, id)
+	return err
 }
 
 func (s *Service) notify(ctx context.Context, to, actor uuid.UUID, typ domain.NotificationType, subject, link string) {
@@ -366,6 +389,7 @@ func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, in UpdateInp
 	if err := s.DB.WithContext(ctx).Model(&domain.WatchlistItem{}).Where("watchlist_id = ?", id).Count(&count).Error; err != nil {
 		return nil, err
 	}
+	s.publish(events.ListUpdated, id, userID, nil)
 	sum := toSummary(w, role, count)
 	return &sum, nil
 }
@@ -379,7 +403,11 @@ func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	if role != domain.RoleOwner {
 		return svcerr.ErrForbidden
 	}
-	return domain.DeleteWatchlistCascade(ctx, s.DB, id)
+	if err := domain.DeleteWatchlistCascade(ctx, s.DB, id); err != nil {
+		return err
+	}
+	s.publish(events.ListDeleted, id, userID, nil)
+	return nil
 }
 
 // AddItem adds the title with the given TMDB ID to the end of a watchlist.
@@ -440,6 +468,7 @@ func (s *Service) AddItem(ctx context.Context, userID, id uuid.UUID, tmdbID int6
 		return nil, err
 	}
 	s.notifyMembers(ctx, w, userID, domain.NotificationItemAdded)
+	s.publish(events.ItemAdded, id, userID, &item.ID)
 	v := toItemView(item)
 	return &v, nil
 }
@@ -480,6 +509,7 @@ func (s *Service) UpdateItemNotes(ctx context.Context, userID, id, itemID uuid.U
 	if err := s.DB.WithContext(ctx).Model(&item).Update("notes", item.Notes).Error; err != nil {
 		return nil, err
 	}
+	s.publish(events.ItemUpdated, id, userID, &item.ID)
 	v := toItemView(item)
 	return &v, nil
 }
@@ -491,12 +521,17 @@ func (s *Service) RemoveItem(ctx context.Context, userID, id, itemID uuid.UUID) 
 		return err
 	}
 	defer s.locks.Lock(id.String())()
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ? AND watchlist_id = ?", itemID, id).Delete(&domain.WatchlistItem{}).Error; err != nil {
 			return err
 		}
 		return renumber(tx, id)
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(events.ItemRemoved, id, userID, &itemID)
+	return nil
 }
 
 // renumber rewrites positions of a list's items to 0..n-1 keeping their order.
@@ -527,7 +562,7 @@ func (s *Service) Reorder(ctx context.Context, userID, id uuid.UUID, itemIDs []u
 		return svcerr.ErrForbidden
 	}
 	defer s.locks.Lock(id.String())()
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current []domain.WatchlistItem
 		if err := tx.Where("watchlist_id = ?", id).Find(&current).Error; err != nil {
 			return err
@@ -552,4 +587,9 @@ func (s *Service) Reorder(ctx context.Context, userID, id uuid.UUID, itemIDs []u
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(events.ItemsReordered, id, userID, nil)
+	return nil
 }
