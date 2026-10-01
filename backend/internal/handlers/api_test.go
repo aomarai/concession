@@ -14,6 +14,7 @@ import (
 	"github.com/aomarai/concession/internal/catalog"
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/progress"
+	"github.com/aomarai/concession/internal/reviews"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/testutil"
 	"github.com/aomarai/concession/internal/tmdb"
@@ -77,6 +78,7 @@ func newAPI(t *testing.T) *api {
 	})
 	NewWatchlistHandler(watchlist.NewService(db, cat)).RegisterRoutes(g)
 	NewProgressHandler(progress.NewService(db, cat)).RegisterRoutes(g)
+	NewReviewHandler(reviews.NewService(db, cat)).RegisterRoutes(g)
 	return &api{t: t, db: db, router: r}
 }
 

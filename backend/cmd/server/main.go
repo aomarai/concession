@@ -18,6 +18,7 @@ import (
 	"github.com/aomarai/concession/internal/handlers"
 	"github.com/aomarai/concession/internal/logging"
 	"github.com/aomarai/concession/internal/progress"
+	"github.com/aomarai/concession/internal/reviews"
 	"github.com/aomarai/concession/internal/tmdb"
 	"github.com/aomarai/concession/internal/watchlist"
 	"github.com/gin-gonic/gin"
@@ -63,6 +64,7 @@ type apiHandlers struct {
 	Catalog   *handlers.CatalogHandler
 	Watchlist *handlers.WatchlistHandler
 	Progress  *handlers.ProgressHandler
+	Reviews   *handlers.ReviewHandler
 }
 
 func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Logger) *gin.Engine {
@@ -102,6 +104,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 	h.Catalog.RegisterRoutes(auth)
 	h.Watchlist.RegisterRoutes(auth)
 	h.Progress.RegisterRoutes(auth)
+	h.Reviews.RegisterRoutes(auth)
 
 	return r
 }
@@ -212,6 +215,7 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
 		Watchlist: handlers.NewWatchlistHandler(watchlist.NewService(db, catalogSvc)),
 		Progress:  handlers.NewProgressHandler(progress.NewService(db, catalogSvc)),
+		Reviews:   handlers.NewReviewHandler(reviews.NewService(db, catalogSvc)),
 	}, logger)
 
 	port := cfg.Port

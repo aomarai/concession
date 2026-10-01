@@ -64,6 +64,21 @@ Personal tracking, separate from watchlists. `:kind` is `movies` or `shows`; `:t
 | PUT | `/api/v1/me/progress/:kind/:tmdb_id` | Create or update. Body `{status, last_season_num?, last_episode_num?}`; `status` is `plan_to_watch`, `watching`, `completed` or `dropped`. Season/episode are for shows only, and an episode needs a season. The title is fetched from TMDB if needed |
 | DELETE | `/api/v1/me/progress/:kind/:tmdb_id` | Stop tracking. `204` |
 
+### Reviews and ratings
+
+Ratings are whole numbers from 1 to 10. Reviews are visible to every signed-in user; only the author can change or delete one. Each user can review a title once (a second attempt is `409 conflict`); deleting a review lets them review it again. Reviews expose the author's `id`, `display_name` and `avatar_url` only, never their email. Limits: title 200 characters, text 10,000; both are optional, so a bare rating is fine.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/v1/movies/:tmdb_id/reviews`, `/api/v1/shows/:tmdb_id/reviews` | Body `{rating, title?, content?}`. The title is fetched from TMDB if needed. `201` with the review |
+| GET | `/api/v1/movies/:tmdb_id/reviews`, `/api/v1/shows/:tmdb_id/reviews?page=&per_page=` | `{reviews, summary:{count, average}, page, per_page, total}`, newest first. `average` is rounded to one decimal and is 0 with no reviews. A title nobody has reviewed (or that was never stored) returns an empty page without calling TMDB |
+| GET | `/api/v1/me/reviews?page=&per_page=` | Your reviews, newest first, each with its `movie` or `show` |
+| GET | `/api/v1/reviews/:id` | One review with its title |
+| PATCH | `/api/v1/reviews/:id` | Author only. Any of `rating`, `title`, `content`; omitted fields are unchanged |
+| DELETE | `/api/v1/reviews/:id` | Author only. `204` |
+
+Pagination: `page` defaults to 1 and `per_page` to 20 (maximum 100, larger values are clamped); non-numeric, non-positive or absurdly large (`page` over 1,000,000) values are `400`.
+
 ## CORS
 
 Origins listed in `CORS_ALLOWED_ORIGINS` may make credentialed requests (cookies). Others get no CORS headers.
