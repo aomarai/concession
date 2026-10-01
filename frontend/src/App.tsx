@@ -1,10 +1,12 @@
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from './api/client'
-import { getMe, logout } from './api/endpoints'
+import { getMe, getUnreadCount, logout } from './api/endpoints'
+import FriendsPage from './pages/FriendsPage'
 import InvitesPage from './pages/InvitesPage'
 import ListPage from './pages/ListPage'
 import ListsPage from './pages/ListsPage'
+import NotificationsPage from './pages/NotificationsPage'
 import SearchPage from './pages/SearchPage'
 import SharedListPage from './pages/SharedListPage'
 import TitlePage from './pages/TitlePage'
@@ -23,6 +25,13 @@ function SignIn() {
 }
 
 const navClass = ({ isActive }: { isActive: boolean }) => (isActive ? 'text-amber-400' : 'hover:text-amber-300')
+
+function UnreadBadge() {
+  const unread = useQuery({ queryKey: ['unread'], queryFn: getUnreadCount, refetchInterval: 60_000 })
+  const n = unread.data?.unread_count ?? 0
+  if (n === 0) return null
+  return <span aria-label={`${n} unread`} className="ml-1 rounded-full bg-amber-500 px-1.5 text-xs font-medium text-zinc-900">{n}</span>
+}
 
 export default function App() {
   const qc = useQueryClient()
@@ -51,6 +60,8 @@ export default function App() {
           <NavLink to="/" end className={navClass}>Lists</NavLink>
           <NavLink to="/search" className={navClass}>Search</NavLink>
           <NavLink to="/invites" className={navClass}>Invites</NavLink>
+          <NavLink to="/friends" className={navClass}>Friends</NavLink>
+          <NavLink to="/notifications" className={navClass}>Notifications<UnreadBadge /></NavLink>
         </nav>
         <span className="ml-auto text-sm text-zinc-400">{me.data.display_name}</span>
         <button onClick={() => signOut.mutate()} className="text-sm hover:underline">Sign out</button>
@@ -60,6 +71,8 @@ export default function App() {
         <Route path="/lists/:id" element={<ListPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/invites" element={<InvitesPage />} />
+        <Route path="/friends" element={<FriendsPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/shared/:token" element={<SharedListPage />} />
         <Route path="/movies/:tmdbId" element={<TitlePage kind="movies" />} />
         <Route path="/shows/:tmdbId" element={<TitlePage kind="shows" />} />

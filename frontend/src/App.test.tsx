@@ -11,6 +11,7 @@ const me = { id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '' }
 
 beforeEach(() => {
   vi.mocked(api.listWatchlists).mockResolvedValue({ watchlists: [] })
+  vi.mocked(api.getUnreadCount).mockResolvedValue({ unread_count: 0 })
 })
 
 describe('App auth gate', () => {
@@ -71,5 +72,31 @@ describe('App auth gate', () => {
     })
     renderWithProviders(<App />, { route: '/shared/tok' })
     expect(await screen.findByRole('heading', { name: 'Shared one' })).toBeInTheDocument()
+  })
+
+  it('shows the unread notification count in the nav', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    vi.mocked(api.getUnreadCount).mockResolvedValue({ unread_count: 3 })
+    renderWithProviders(<App />)
+    expect(await screen.findByLabelText('3 unread')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Notifications/ })).toBeInTheDocument()
+  })
+
+  it('shows no badge when everything is read', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    renderWithProviders(<App />)
+    await screen.findByText('Ada L')
+    expect(screen.queryByLabelText(/unread/)).not.toBeInTheDocument()
+  })
+
+  it('has notifications and friends pages', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    vi.mocked(api.listNotifications).mockResolvedValue({ notifications: [], unread_count: 0, page: 1, per_page: 20, total: 0 })
+    vi.mocked(api.listFriends).mockResolvedValue({ friends: [] })
+    vi.mocked(api.listFriendRequests).mockResolvedValue({ incoming: [], outgoing: [] })
+    renderWithProviders(<App />, { route: '/notifications' })
+    expect(await screen.findByText(/no notifications/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('link', { name: 'Friends' }))
+    expect(await screen.findByText(/no friends yet/i)).toBeInTheDocument()
   })
 })
