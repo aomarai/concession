@@ -23,6 +23,16 @@ describe('endpoints', () => {
       () => api.addItem('l1', 603),
       ['/watchlists/l1/items', { method: 'POST', body: { tmdb_id: 603 } }],
     ],
+    ['movie', () => api.getMovie(603), ['/movies/603']],
+    ['show', () => api.getShow(1396), ['/shows/1396']],
+    ['reviews', () => api.listReviews('movies', 603, 2), ['/movies/603/reviews?page=2']],
+    [
+      'create review',
+      () => api.createReview('shows', 1396, { rating: 9 }),
+      ['/shows/1396/reviews', { method: 'POST', body: { rating: 9 } }],
+    ],
+    ['update review', () => api.updateReview('r1', { rating: 4 }), ['/reviews/r1', { method: 'PATCH', body: { rating: 4 } }]],
+    ['delete review', () => api.deleteReview('r1'), ['/reviews/r1', { method: 'DELETE' }]],
     ['remove item', () => api.removeItem('l1', 'i1'), ['/watchlists/l1/items/i1', { method: 'DELETE' }]],
   ])('%s', async (_name, call, expected) => {
     await call()

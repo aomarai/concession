@@ -83,4 +83,18 @@ describe('ListPage', () => {
     renderPage()
     expect(await screen.findByText('orphan')).toBeInTheDocument()
   })
+
+  it('links items to their title pages', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue(detail)
+    renderPage()
+    expect(await screen.findByRole('link', { name: 'The Matrix' })).toHaveAttribute('href', '/movies/603')
+    expect(screen.getByRole('link', { name: 'Breaking Bad' })).toHaveAttribute('href', '/shows/1396')
+  })
+
+  it('does not link items that lack a TMDB id', async () => {
+    vi.mocked(api.getWatchlist).mockResolvedValue({ ...detail, items: [{ id: 'i3', item_type: 'show', position: 0, notes: '', show: { id: 3, name: 'No Id', overview: '' } }] })
+    renderPage()
+    expect(await screen.findByText('No Id')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'No Id' })).not.toBeInTheDocument()
+  })
 })
