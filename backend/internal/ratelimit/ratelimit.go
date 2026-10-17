@@ -11,6 +11,12 @@ import (
 // sweepEvery is how often idle buckets are dropped so memory stays bounded.
 const sweepEvery = time.Minute
 
+// maxTrackedKeys caps how many keys a limiter remembers. Past it, new keys are
+// let through untracked until the next sweep frees room: an attacker who
+// rotates through addresses can already dodge a per-address limit, so failing
+// open costs little, while failing closed would lock real users out.
+const maxTrackedKeys = 100_000
+
 type bucket struct {
 	tokens float64
 	last   time.Time
@@ -26,12 +32,13 @@ type Limiter struct {
 	now       func() time.Time
 	buckets   map[string]*bucket
 	lastSweep time.Time
+	maxKeys   int
 }
 
 // New returns a limiter allowing `limit` requests per key per `per`, or nil
-// (no limit) when limit is not positive.
+// (no limit) when limit or per is not positive.
 func New(limit int, per time.Duration) *Limiter {
-	if limit <= 0 {
+	if limit <= 0 || per <= 0 {
 		return nil
 	}
 	return &Limiter{
@@ -39,6 +46,7 @@ func New(limit int, per time.Duration) *Limiter {
 		rate:     float64(limit) / per.Seconds(),
 		now:      time.Now,
 		buckets:  map[string]*bucket{},
+		maxKeys:  maxTrackedKeys,
 	}
 }
 
@@ -55,6 +63,9 @@ func (l *Limiter) Allow(key string) (bool, time.Duration) {
 
 	b, ok := l.buckets[key]
 	if !ok {
+		if len(l.buckets) >= l.maxKeys {
+			return true, 0 // at the cap: do not remember this key (see maxTrackedKeys)
+		}
 		b = &bucket{tokens: l.capacity, last: now}
 		l.buckets[key] = b
 	}

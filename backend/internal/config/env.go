@@ -85,6 +85,23 @@ func (c *Config) Validate() error {
 	if sameSiteFromString(c.CookieSameSite) == http.SameSiteNoneMode && !c.CookieSecure {
 		return errors.New("COOKIE_SAME_SITE=None requires COOKIE_SECURE=true (modern browsers reject insecure SameSite=None cookies)")
 	}
+	for _, l := range []struct {
+		env string
+		val int
+	}{
+		{"RATE_LIMIT_AUTH_PER_MINUTE", c.RateLimitAuthPerMinute},
+		{"RATE_LIMIT_IP_PER_MINUTE", c.RateLimitIPPerMinute},
+		{"RATE_LIMIT_API_PER_MINUTE", c.RateLimitAPIPerMinute},
+		{"RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", c.RateLimitFriendRequestsPerHour},
+		{"RATE_LIMIT_INVITES_PER_HOUR", c.RateLimitInvitesPerHour},
+		{"MAX_EVENT_STREAMS_PER_USER", c.MaxEventStreamsPerUser},
+	} {
+		// A negative value is almost certainly a typo, and would silently
+		// switch the limit off; 0 is the deliberate way to do that.
+		if l.val < 0 {
+			return fmt.Errorf("%s=%d is negative; use 0 to switch the limit off", l.env, l.val)
+		}
+	}
 	for _, p := range c.TrustedProxies {
 		if _, _, err := net.ParseCIDR(p); err != nil && net.ParseIP(p) == nil {
 			return fmt.Errorf("TRUSTED_PROXIES: %q is neither an IP address nor a CIDR range", p)
@@ -123,6 +140,7 @@ type Config struct {
 
 	// Rate limits (in-memory, per process). An explicit 0 switches a limit off.
 	RateLimitAuthPerMinute         int `env:"RATE_LIMIT_AUTH_PER_MINUTE"`          // sign-in routes, per client IP
+	RateLimitIPPerMinute           int `env:"RATE_LIMIT_IP_PER_MINUTE"`            // authenticated routes before the session check, per client IP
 	RateLimitAPIPerMinute          int `env:"RATE_LIMIT_API_PER_MINUTE"`           // all authenticated routes, per user
 	RateLimitFriendRequestsPerHour int `env:"RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR"` // sending friend requests, per user
 	RateLimitInvitesPerHour        int `env:"RATE_LIMIT_INVITES_PER_HOUR"`         // sending list invitations, per user
@@ -205,6 +223,7 @@ func applyRateLimitDefaults(cfg *Config) {
 		val int
 	}{
 		{"RATE_LIMIT_AUTH_PER_MINUTE", &cfg.RateLimitAuthPerMinute, 30},
+		{"RATE_LIMIT_IP_PER_MINUTE", &cfg.RateLimitIPPerMinute, 1200},
 		{"RATE_LIMIT_API_PER_MINUTE", &cfg.RateLimitAPIPerMinute, 600},
 		{"RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", &cfg.RateLimitFriendRequestsPerHour, 30},
 		{"RATE_LIMIT_INVITES_PER_HOUR", &cfg.RateLimitInvitesPerHour, 60},

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"math"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -14,8 +15,16 @@ import (
 type KeyFunc func(c *gin.Context) string
 
 // ClientIPKey counts per client IP. Behind a reverse proxy this is only the
-// real client when the proxy is trusted (see TRUSTED_PROXIES).
-func ClientIPKey(c *gin.Context) string { return c.ClientIP() }
+// real client when the proxy is trusted (see TRUSTED_PROXIES). IPv6 clients
+// are counted per /64, since one host or household owns the whole prefix and
+// could otherwise rotate through addresses for free budgets.
+func ClientIPKey(c *gin.Context) string {
+	ip := c.ClientIP()
+	if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() == nil {
+		return parsed.Mask(net.CIDRMask(64, 128)).String()
+	}
+	return ip
+}
 
 // UserKey counts per authenticated user, falling back to the client IP.
 func UserKey(c *gin.Context) string {
@@ -34,7 +43,7 @@ func RateLimit(l *ratelimit.Limiter, key KeyFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ok, retry := l.Allow(key(c))
 		if ok {
-			return
+			return // no c.Next() needed: gin runs the rest of the chain unless the request is aborted
 		}
 		// A denied request always has a positive wait, so this is at least 1.
 		secs := max(1, int(math.Ceil(retry.Seconds())))

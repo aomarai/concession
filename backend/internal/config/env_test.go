@@ -9,7 +9,7 @@ import (
 
 // allConfigEnvKeys lists every env var Config reads.
 var allConfigEnvKeys = []string{
-	"DB_DRIVER", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT", "DB_SSLMODE", "RATE_LIMIT_AUTH_PER_MINUTE", "RATE_LIMIT_API_PER_MINUTE", "RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", "RATE_LIMIT_INVITES_PER_HOUR", "MAX_EVENT_STREAMS_PER_USER", "TRUSTED_PROXIES",
+	"DB_DRIVER", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT", "DB_SSLMODE", "RATE_LIMIT_AUTH_PER_MINUTE", "RATE_LIMIT_IP_PER_MINUTE", "RATE_LIMIT_API_PER_MINUTE", "RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", "RATE_LIMIT_INVITES_PER_HOUR", "MAX_EVENT_STREAMS_PER_USER", "TRUSTED_PROXIES",
 	"DB_PATH", "ENV", "JWT_SECRET", "PORT",
 	"COOKIE_SECURE", "COOKIE_HTTP_ONLY", "COOKIE_SAME_SITE", "COOKIE_PATH", "COOKIE_DOMAIN",
 	"SESSION_COOKIE_NAME", "SESSION_COOKIE_MAX_AGE",
@@ -237,6 +237,7 @@ func TestRateLimitDefaults(t *testing.T) {
 	}
 	for name, got := range map[string][2]int{
 		"auth/min":           {cfg.RateLimitAuthPerMinute, 30},
+		"ip/min":             {cfg.RateLimitIPPerMinute, 1200},
 		"api/min":            {cfg.RateLimitAPIPerMinute, 600},
 		"friend requests/hr": {cfg.RateLimitFriendRequestsPerHour, 30},
 		"invites/hr":         {cfg.RateLimitInvitesPerHour, 60},
@@ -283,5 +284,21 @@ func TestInvalidTrustedProxyIsRejected(t *testing.T) {
 	_, err := Load(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXIES") {
 		t.Errorf("expected an error naming TRUSTED_PROXIES, got %v", err)
+	}
+}
+
+func TestNegativeRateLimitsAreRejected(t *testing.T) {
+	for _, name := range []string{
+		"RATE_LIMIT_AUTH_PER_MINUTE", "RATE_LIMIT_IP_PER_MINUTE", "RATE_LIMIT_API_PER_MINUTE",
+		"RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", "RATE_LIMIT_INVITES_PER_HOUR", "MAX_EVENT_STREAMS_PER_USER",
+	} {
+		t.Run(name, func(t *testing.T) {
+			unsetAllConfigEnv(t)
+			t.Setenv(name, "-1")
+			_, err := Load(context.Background())
+			if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "0") {
+				t.Errorf("expected an error naming %s and pointing at 0 to disable, got %v", name, err)
+			}
+		})
 	}
 }

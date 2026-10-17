@@ -139,12 +139,51 @@ func TestOpenStreamsAreCappedPerUser(t *testing.T) {
 	}
 }
 
-func TestWithMiddlewareSkipsANilMiddleware(t *testing.T) {
-	h := func(*gin.Context) {}
-	if got := withMiddleware(nil, h); len(got) != 1 {
-		t.Errorf("without middleware the chain is just the handler, got %d entries", len(got))
+func TestWithMiddlewareRunsTheMiddlewareBeforeTheHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var order []string
+	mw := func(*gin.Context) { order = append(order, "middleware") }
+	h := func(c *gin.Context) { order = append(order, "handler"); c.Status(http.StatusNoContent) }
+
+	run := func(chain []gin.HandlerFunc) []string {
+		order = nil
+		r := gin.New()
+		r.GET("/x", chain...)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil))
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("status = %d: the handler did not run", w.Code)
+		}
+		return order
 	}
-	if got := withMiddleware(func(*gin.Context) {}, h); len(got) != 2 {
-		t.Errorf("with middleware the chain has both, got %d entries", len(got))
+	if got := run(withMiddleware(nil, h)); strings.Join(got, ",") != "handler" {
+		t.Errorf("without middleware ran %v", got)
+	}
+	if got := run(withMiddleware(mw, h)); strings.Join(got, ",") != "middleware,handler" {
+		t.Errorf("with middleware ran %v", got)
+	}
+}
+
+func TestClientIPKeyGroupsIPv6ClientsByTheir64(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	key := func(remote string) string {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Request.RemoteAddr = remote
+		return ClientIPKey(c)
+	}
+	// One household or host usually owns a whole /64, so rotating the low
+	// bits must not buy a fresh budget.
+	if a, b := key("[2001:db8:1:2::1]:80"), key("[2001:db8:1:2:ffff:abcd::9]:80"); a != b {
+		t.Errorf("same /64 gave different keys %q and %q", a, b)
+	}
+	if a, b := key("[2001:db8:1:2::1]:80"), key("[2001:db8:1:3::1]:80"); a == b {
+		t.Errorf("different /64s share the key %q", a)
+	}
+	if got := key("192.0.2.7:80"); got != "192.0.2.7" {
+		t.Errorf("IPv4 key = %q, want the address itself", got)
+	}
+	if got := key("garbage"); got != "" && got != "garbage" {
+		t.Errorf("an unparsable peer should pass through unchanged, got %q", got)
 	}
 }

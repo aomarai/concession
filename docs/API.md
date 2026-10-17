@@ -14,17 +14,18 @@ Codes in use: `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not
 
 ## Rate limits
 
-Limits are in memory and per server process (several instances multiply them), and are tuned with the environment variables in `docs/DEVELOPMENT.md`. A request over a limit gets `429` with code `rate_limited` and a `Retry-After` header (whole seconds until the next request would be allowed).
+Limits are in memory and per server process (several instances multiply them), and are tuned with the environment variables in `docs/DEVELOPMENT.md`. A request over a limit gets `429` with code `rate_limited` and, for the request-rate limits, a `Retry-After` header (whole seconds until the next request would be allowed). The stream cap has no `Retry-After`: a slot frees whenever one of your streams closes.
 
 | What | Counted per | Default |
 |---|---|---|
 | Sign-in routes (`/auth/google/login`, `/auth/google/callback`, `/auth/logout`), one shared budget | client IP | 30 / minute |
-| Every authenticated route (counted after the session is validated, so anonymous requests are plain `401`s) | user | 600 / minute |
+| Every authenticated route, charged *before* the session is looked up, so floods of missing or bad cookies cost something (a high ceiling meant for abuse, not for normal use behind a shared address) | client IP | 1200 / minute |
+| Every authenticated route, counted after the session is validated | user | 600 / minute |
 | Sending a friend request (`POST /friends`) | user | 30 / hour |
 | Sending a list invitation (`POST /watchlists/:id/collaborators`) | user | 60 / hour |
 | Open live-update streams (`GET /watchlists/:id/events`): a further stream gets `429` until one closes | user | 10 at a time |
 
-The client IP is the TCP peer unless the request comes through a proxy listed in `TRUSTED_PROXIES`, in which case the address in `X-Forwarded-For` is used.
+The client IP is the TCP peer unless the request comes through a proxy listed in `TRUSTED_PROXIES`, in which case the address in `X-Forwarded-For` is used (`X-Real-IP` is never believed). IPv6 clients are counted per /64. A limiter remembers at most 100,000 clients; beyond that new ones are let through untracked until idle entries are swept.
 
 ## Endpoints
 

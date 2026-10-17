@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -84,6 +85,50 @@ func TestTokensRefillOverTime(t *testing.T) {
 	}
 }
 
+func TestNonPositivePeriodDisables(t *testing.T) {
+	// A zero period would make the refill rate infinite and the limit a no-op.
+	for _, per := range []time.Duration{0, -time.Second} {
+		if New(5, per) != nil {
+			t.Errorf("New(5, %v) should return nil (disabled)", per)
+		}
+	}
+}
+
+func TestBucketCountIsBounded(t *testing.T) {
+	l, _ := newLimiter(1, time.Hour)
+	l.maxKeys = 3
+	for _, k := range []string{"a", "b", "c"} {
+		if ok, _ := l.Allow(k); !ok {
+			t.Fatalf("%s should be allowed", k)
+		}
+	}
+	// At the cap new keys are let through untracked, so memory stays bounded.
+	for _, k := range []string{"d", "e", "f"} {
+		if ok, _ := l.Allow(k); !ok {
+			t.Errorf("%s: new keys beyond the cap are allowed (fail open)", k)
+		}
+	}
+	if n := l.size(); n != 3 {
+		t.Errorf("buckets = %d, want 3", n)
+	}
+	// Tracked keys are still limited, and space freed by the sweep is reused.
+	if ok, _ := l.Allow("a"); ok {
+		t.Error("a tracked key stays limited")
+	}
+}
+
+func TestSweepMakesRoomAtTheCap(t *testing.T) {
+	l, c := newLimiter(1, time.Minute)
+	l.maxKeys = 2
+	l.Allow("a")
+	l.Allow("b")
+	c.advance(2 * time.Minute) // both refilled, sweep interval passed
+	l.Allow("c")               // the sweep frees a and b, so c is tracked
+	if ok, _ := l.Allow("c"); ok {
+		t.Error("c should have been tracked (and so be out of tokens)")
+	}
+}
+
 func TestNonPositiveLimitDisables(t *testing.T) {
 	for _, limit := range []int{0, -1} {
 		l := New(limit, time.Minute)
@@ -123,29 +168,24 @@ func TestSweepKeepsBucketsThatAreStillDraining(t *testing.T) {
 	}
 }
 
-func TestConcurrentUse(t *testing.T) {
-	l := New(1000, time.Minute)
+func TestConcurrentUseAllowsExactlyTheLimit(t *testing.T) {
+	l, _ := newLimiter(100, time.Hour) // the clock is frozen, so nothing refills
+	var allowed, denied atomic.Int64
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 400; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 50; j++ {
-				l.Allow("k")
+			if ok, _ := l.Allow("k"); ok {
+				allowed.Add(1)
+			} else {
+				denied.Add(1)
 			}
 		}()
 	}
 	wg.Wait()
-	// 1000 tokens, 1000 calls: all allowed, so the next one is the first denial
-	// unless a token refilled meanwhile (at most a few in this short window).
-	denied := 0
-	for j := 0; j < 20; j++ {
-		if ok, _ := l.Allow("k"); !ok {
-			denied++
-		}
-	}
-	if denied == 0 {
-		t.Error("expected the bucket to be exhausted")
+	if allowed.Load() != 100 || denied.Load() != 300 {
+		t.Errorf("allowed %d, denied %d; want exactly 100 and 300", allowed.Load(), denied.Load())
 	}
 }
 
@@ -178,6 +218,25 @@ func TestGateCapsConcurrentHolders(t *testing.T) {
 	r3()
 	if n := g.size(); n != 1 { // only "other" still holds a slot
 		t.Errorf("empty keys should be removed, got %d", n)
+	}
+}
+
+func TestGateNeverAdmitsMoreThanTheCapConcurrently(t *testing.T) {
+	g := NewGate(10)
+	var admitted atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, ok := g.Acquire("u"); ok { // never released
+				admitted.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if admitted.Load() != 10 {
+		t.Errorf("admitted %d holders, want exactly 10", admitted.Load())
 	}
 }
 

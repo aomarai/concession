@@ -106,6 +106,9 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 	// Only believe X-Forwarded-For from configured proxies; with none, the
 	// client IP is the TCP peer. The entries were validated when the config
 	// was loaded, so an error here means a hand-built config.
+	// Only X-Forwarded-For identifies the client: X-Real-IP is whatever the
+	// client sent unless every proxy overwrites it.
+	r.RemoteIPHeaders = []string{"X-Forwarded-For"}
 	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		logger.Error("invalid trusted proxies; using the TCP peer as the client IP", "error", err)
 		_ = r.SetTrustedProxies(nil)
@@ -123,14 +126,19 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 	apiV1.GET("/auth/google/callback", signIn, h.Auth.HandleGoogleCallback)
 	apiV1.POST("/auth/logout", signIn, h.Auth.HandleLogout)
 
-	// Authenticated routes: a generous per-user budget overall (counted only
-	// after the session checks out), tighter ones where actions reach other
+	// Authenticated routes: a per-IP budget charged before the session lookup
+	// (so floods of bad cookies cost something), a generous per-user budget
+	// once the session checks out, tighter ones where actions reach other
 	// people, and a cap on open live-update streams.
 	h.Friends.LimitSend(handlers.RateLimit(ratelimit.New(cfg.RateLimitFriendRequestsPerHour, time.Hour), handlers.UserKey))
 	h.Collab.LimitInvites(handlers.RateLimit(ratelimit.New(cfg.RateLimitInvitesPerHour, time.Hour), handlers.UserKey))
 	h.Events.LimitStreams(ratelimit.NewGate(cfg.MaxEventStreamsPerUser))
 	auth := apiV1.Group("/")
-	auth.Use(h.Auth.AuthMiddleware(), handlers.RateLimit(ratelimit.New(cfg.RateLimitAPIPerMinute, time.Minute), handlers.UserKey))
+	auth.Use(
+		handlers.RateLimit(ratelimit.New(cfg.RateLimitIPPerMinute, time.Minute), handlers.ClientIPKey),
+		h.Auth.AuthMiddleware(),
+		handlers.RateLimit(ratelimit.New(cfg.RateLimitAPIPerMinute, time.Minute), handlers.UserKey),
+	)
 	auth.GET("/me", h.User.HandleGetMe)
 	h.Catalog.RegisterRoutes(auth)
 	h.Watchlist.RegisterRoutes(auth)

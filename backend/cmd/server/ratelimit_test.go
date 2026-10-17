@@ -137,6 +137,48 @@ func TestAPILimitIsPerAuthenticatedUser(t *testing.T) {
 	}
 }
 
+func TestAnonymousRequestsCountAgainstThePerIPLimit(t *testing.T) {
+	// Every request with a bad session costs a database lookup before the
+	// per-user limit can apply, so authenticated routes also have a per-IP
+	// budget that is charged before the session is checked.
+	r, db := limitedRouter(t, &config.Config{RateLimitIPPerMinute: 3}, nil)
+	_, ada := newUserWithSession(t, db, "ada")
+	bad := &http.Cookie{Name: "session_token", Value: "not-a-real-session"}
+	ip := "203.0.113.50:1"
+	if w := call(r, http.MethodGet, "/api/v1/me", ip, nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("no cookie = %d, want 401", w.Code)
+	}
+	if w := call(r, http.MethodGet, "/api/v1/me", ip, bad); w.Code != http.StatusUnauthorized {
+		t.Errorf("bad cookie = %d, want 401", w.Code)
+	}
+	if w := call(r, http.MethodGet, "/api/v1/me", ip, ada); w.Code != http.StatusOK {
+		t.Errorf("valid session = %d, want 200", w.Code)
+	}
+	for _, c := range []*http.Cookie{nil, bad, ada} {
+		if w := call(r, http.MethodGet, "/api/v1/me", ip, c); w.Code != http.StatusTooManyRequests {
+			t.Errorf("over the per-IP budget = %d, want 429", w.Code)
+		}
+	}
+	if w := call(r, http.MethodGet, "/api/v1/me", "203.0.113.51:1", ada); w.Code != http.StatusOK {
+		t.Errorf("another IP = %d, want 200", w.Code)
+	}
+}
+
+func TestOnlyXForwardedForIsTrusted(t *testing.T) {
+	// X-Real-IP is whatever the client sent unless the proxy overwrites it, so
+	// it must not pick the client's identity even from a trusted proxy.
+	r, _ := limitedRouter(t, &config.Config{RateLimitAuthPerMinute: 1, TrustedProxies: []string{"10.0.0.0/8"}}, nil)
+	login := func(realIP string) int {
+		return call(r, http.MethodGet, "/api/v1/auth/google/login", "10.1.1.1:80", nil, "X-Real-IP", realIP).Code
+	}
+	if login("198.51.100.1") != http.StatusTemporaryRedirect {
+		t.Fatal("the first request should pass")
+	}
+	if login("198.51.100.2") != http.StatusTooManyRequests {
+		t.Error("a different X-Real-IP must not buy a fresh budget")
+	}
+}
+
 func TestFriendRequestAndInviteLimitsAreWired(t *testing.T) {
 	r, db := limitedRouter(t, &config.Config{RateLimitFriendRequestsPerHour: 1, RateLimitInvitesPerHour: 1}, nil)
 	_, ada := newUserWithSession(t, db, "ada")
