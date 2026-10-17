@@ -11,6 +11,20 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # A real Postgres for the tests that need enforced foreign keys (SQLite
+    # tests create none); they skip themselves without TEST_POSTGRES_DSN.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -24,6 +38,8 @@ jobs:
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
       - name: Test with coverage (enforces .coverage-threshold)
+        env:
+          TEST_POSTGRES_DSN: host=localhost user=postgres password=postgres dbname=postgres port=5432 sslmode=disable
         run: ./scripts/coverage.sh --summary
       - uses: actions/upload-artifact@v4
         if: always()

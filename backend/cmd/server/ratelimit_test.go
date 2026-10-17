@@ -51,7 +51,7 @@ func limitedRouterNamed(t *testing.T, cfg *config.Config, logger *slog.Logger, s
 	watchlistSvc := watchlist.NewService(db, catalogSvc)
 	r := setupRouter(db, cfg, apiHandlers{
 		Auth:      handlers.NewAuthHandler(db, cfg),
-		User:      handlers.NewUserHandler(db),
+		User:      handlers.NewUserHandler(db, cfg),
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
 		Watchlist: handlers.NewWatchlistHandler(watchlistSvc),
 		Collab:    handlers.NewCollaborationHandler(watchlistSvc),

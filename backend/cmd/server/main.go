@@ -60,7 +60,7 @@ func initDB(cfg *config.Config) (*gorm.DB, error) {
 		dialector = sqlite.Open(dbURI)
 	}
 
-	db, err := gorm.Open(dialector, &gorm.Config{})
+	db, err := gorm.Open(dialector, &gorm.Config{TranslateError: true}) // unique violations become gorm.ErrDuplicatedKey
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 		h.Auth.AuthMiddleware(),
 		handlers.RateLimit(ratelimit.New(cfg.RateLimitAPIPerMinute, time.Minute), handlers.UserKey),
 	)
-	auth.GET("/me", h.User.HandleGetMe)
+	h.User.RegisterRoutes(auth)
 	h.Catalog.RegisterRoutes(auth)
 	h.Watchlist.RegisterRoutes(auth)
 	h.Collab.RegisterRoutes(auth)
@@ -241,7 +241,7 @@ func run(ctx context.Context, ready func(net.Addr)) error {
 	defer closeDB(db)
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
-	userHandler := handlers.NewUserHandler(db)
+	userHandler := handlers.NewUserHandler(db, cfg)
 	if cfg.TMDBReadAccessToken == "" {
 		logger.Warn("TMDB_READ_ACCESS_TOKEN is not set; catalog endpoints will fail")
 	}

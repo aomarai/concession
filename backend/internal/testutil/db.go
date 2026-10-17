@@ -24,7 +24,7 @@ func NewDB(t *testing.T, models ...any) *gorm.DB {
 	// The sequence number keeps databases apart when one test calls NewDB more
 	// than once, or is repeated with -count=N.
 	dsn := fmt.Sprintf("file:%s_%d?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"), dbSeq.Add(1))
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true, TranslateError: true})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -47,7 +47,7 @@ func NewDB(t *testing.T, models ...any) *gorm.DB {
 func NewFileDB(t *testing.T, models ...any) *gorm.DB {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "test.db") + "?_busy_timeout=10000&_journal_mode=WAL&_txlock=immediate"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true, TranslateError: true})
 	if err != nil {
 		t.Fatalf("open sqlite file: %v", err)
 	}
