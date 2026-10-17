@@ -24,6 +24,7 @@ services:
   backend:
     profiles: [app]
     build: ./backend
+    networks: [default, edge]
     depends_on:
       db:
         condition: service_healthy
@@ -44,21 +45,35 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-http://localhost:8080/api/v1/auth/google/callback}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
-      # The frontend container (nginx) is the only thing that reaches the API, on
-      # the private compose network: believe its X-Forwarded-For for rate limits.
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # Believe X-Forwarded-For only from the frontend container (nginx), which
+      # has a fixed address on the "edge" network below, so no other address can
+      # vouch for a client IP.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-${FRONTEND_IP:-172.29.250.10}}
       TMDB_READ_ACCESS_TOKEN: ${TMDB_READ_ACCESS_TOKEN:-}
     restart: unless-stopped
 
   frontend:
     profiles: [app]
     build: ./frontend
+    networks:
+      edge:
+        ipv4_address: ${FRONTEND_IP:-172.29.250.10}
     depends_on:
       backend:
         condition: service_healthy
     ports:
       - "${APP_PORT:-8080}:80"
     restart: unless-stopped
+
+# The only path to the API is frontend -> backend over this network. It has a
+# fixed subnet so the frontend's address is known (see TRUSTED_PROXIES). It is
+# created only by the "app" profile; change APP_SUBNET and FRONTEND_IP if the
+# range clashes with another Docker network on your machine.
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${APP_SUBNET:-172.29.250.0/24}
 
 volumes:
   pgdata:
