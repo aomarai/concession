@@ -21,6 +21,7 @@ import (
 	"github.com/aomarai/concession/internal/logging"
 	"github.com/aomarai/concession/internal/notifications"
 	"github.com/aomarai/concession/internal/progress"
+	"github.com/aomarai/concession/internal/ratelimit"
 	"github.com/aomarai/concession/internal/reviews"
 	"github.com/aomarai/concession/internal/tmdb"
 	"github.com/aomarai/concession/internal/watchlist"
@@ -102,6 +103,16 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 	r.NoMethod(func(c *gin.Context) {
 		handlers.RespondError(c, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed")
 	})
+	// Only believe X-Forwarded-For from configured proxies; with none, the
+	// client IP is the TCP peer. The entries were validated when the config
+	// was loaded, so an error here means a hand-built config.
+	// Only X-Forwarded-For identifies the client: X-Real-IP is whatever the
+	// client sent unless every proxy overwrites it.
+	r.RemoteIPHeaders = []string{"X-Forwarded-For"}
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		logger.Error("invalid trusted proxies; using the TCP peer as the client IP", "error", err)
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(logging.GinRequestLoggerMiddleware(logger))
 	r.Use(handlers.CORSMiddleware(cfg.CORSAllowedOrigins))
 
@@ -109,14 +120,25 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 
 	apiV1 := r.Group("/api/v1")
 
-	// Public routes
-	apiV1.GET("/auth/google/login", h.Auth.HandleGoogleLogin)
-	apiV1.GET("/auth/google/callback", h.Auth.HandleGoogleCallback)
-	apiV1.POST("/auth/logout", h.Auth.HandleLogout)
+	// Public routes: sign-in is limited per client IP, one budget for all three.
+	signIn := handlers.RateLimit(ratelimit.New(cfg.RateLimitAuthPerMinute, time.Minute), handlers.ClientIPKey)
+	apiV1.GET("/auth/google/login", signIn, h.Auth.HandleGoogleLogin)
+	apiV1.GET("/auth/google/callback", signIn, h.Auth.HandleGoogleCallback)
+	apiV1.POST("/auth/logout", signIn, h.Auth.HandleLogout)
 
-	// Authenticated routes
+	// Authenticated routes: a per-IP budget charged before the session lookup
+	// (so floods of bad cookies cost something), a generous per-user budget
+	// once the session checks out, tighter ones where actions reach other
+	// people, and a cap on open live-update streams.
+	h.Friends.LimitSend(handlers.RateLimit(ratelimit.New(cfg.RateLimitFriendRequestsPerHour, time.Hour), handlers.UserKey))
+	h.Collab.LimitInvites(handlers.RateLimit(ratelimit.New(cfg.RateLimitInvitesPerHour, time.Hour), handlers.UserKey))
+	h.Events.LimitStreams(ratelimit.NewGate(cfg.MaxEventStreamsPerUser))
 	auth := apiV1.Group("/")
-	auth.Use(h.Auth.AuthMiddleware())
+	auth.Use(
+		handlers.RateLimit(ratelimit.New(cfg.RateLimitIPPerMinute, time.Minute), handlers.ClientIPKey),
+		h.Auth.AuthMiddleware(),
+		handlers.RateLimit(ratelimit.New(cfg.RateLimitAPIPerMinute, time.Minute), handlers.UserKey),
+	)
 	auth.GET("/me", h.User.HandleGetMe)
 	h.Catalog.RegisterRoutes(auth)
 	h.Watchlist.RegisterRoutes(auth)

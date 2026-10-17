@@ -11,15 +11,20 @@ import (
 )
 
 type FriendHandler struct {
-	svc *friends.Service
+	svc       *friends.Service
+	sendLimit gin.HandlerFunc
 }
 
 func NewFriendHandler(svc *friends.Service) *FriendHandler { return &FriendHandler{svc: svc} }
 
+// LimitSend puts middleware (e.g. a rate limit) in front of sending friend
+// requests, the one friends action that can be used to pester people.
+func (h *FriendHandler) LimitSend(mw gin.HandlerFunc) { h.sendLimit = mw }
+
 // RegisterRoutes mounts the friends endpoints on r (authenticated group).
 func (h *FriendHandler) RegisterRoutes(r gin.IRoutes) {
 	r.GET("/friends", h.List)
-	r.POST("/friends", h.Send)
+	r.POST("/friends", withMiddleware(h.sendLimit, h.Send)...)
 	r.DELETE("/friends/:user_id", h.Remove)
 	r.GET("/friends/requests", h.ListRequests)
 	r.POST("/friends/requests/:id/accept", h.Accept)

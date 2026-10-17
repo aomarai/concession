@@ -14,8 +14,13 @@ import (
 // CollaborationHandler serves invitations, membership, roles and share links
 // for watchlists.
 type CollaborationHandler struct {
-	svc *watchlist.Service
+	svc         *watchlist.Service
+	inviteLimit gin.HandlerFunc
 }
+
+// LimitInvites puts middleware (e.g. a rate limit) in front of sending
+// invitations, which notify other people.
+func (h *CollaborationHandler) LimitInvites(mw gin.HandlerFunc) { h.inviteLimit = mw }
 
 func NewCollaborationHandler(svc *watchlist.Service) *CollaborationHandler {
 	return &CollaborationHandler{svc: svc}
@@ -24,7 +29,7 @@ func NewCollaborationHandler(svc *watchlist.Service) *CollaborationHandler {
 // RegisterRoutes mounts the collaboration endpoints on r (authenticated group).
 func (h *CollaborationHandler) RegisterRoutes(r gin.IRoutes) {
 	r.GET("/watchlists/:id/collaborators", h.ListMembers)
-	r.POST("/watchlists/:id/collaborators", h.Invite)
+	r.POST("/watchlists/:id/collaborators", withMiddleware(h.inviteLimit, h.Invite)...)
 	r.PATCH("/watchlists/:id/collaborators/:user_id", h.SetRole)
 	r.DELETE("/watchlists/:id/collaborators/:user_id", h.Remove)
 	r.POST("/watchlists/:id/share-token", h.RotateShareToken)

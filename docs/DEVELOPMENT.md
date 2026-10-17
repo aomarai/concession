@@ -28,6 +28,13 @@ All settings are environment variables (a `backend/.env` file is loaded if prese
 | `COOKIE_SECURE` | Defaults to `true`; set `false` for plain-http local dev |
 | `COOKIE_SAME_SITE` | `lax` (default), `strict`, `none` (requires `COOKIE_SECURE=true`) |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_REDIRECT_URL` | Google OAuth login |
+| `RATE_LIMIT_AUTH_PER_MINUTE` | Sign-in routes per client IP (default `30`) |
+| `RATE_LIMIT_IP_PER_MINUTE` | Authenticated routes per client IP, charged before the session lookup (default `1200`) |
+| `RATE_LIMIT_API_PER_MINUTE` | All authenticated routes per user (default `600`) |
+| `RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR` | Friend requests sent per user (default `30`) |
+| `RATE_LIMIT_INVITES_PER_HOUR` | List invitations sent per user (default `60`) |
+| `MAX_EVENT_STREAMS_PER_USER` | Concurrent live-update streams per user (default `10`) |
+| `TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is believed when finding the client IP. Empty (default) trusts none. **Behind a proxy set this**, otherwise every visitor shares the proxy's address and the per-IP sign-in limit applies to all of them at once; trust only proxies you control or anyone can spoof their address. An explicit `0` for any limit above switches it off; a negative value is rejected at startup |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins (default `http://localhost:5173`) |
 | `TMDB_READ_ACCESS_TOKEN` | TMDB v4 "API Read Access Token" (bearer). Without it the catalog endpoints fail with 502 and the server logs a warning |
 | `TMDB_BASE_URL` | Override the TMDB API URL (tests/proxies); default `https://api.themoviedb.org/3` |
@@ -71,7 +78,7 @@ cp .env.example .env      # fill in GOOGLE_CLIENT_ID/SECRET and TMDB_READ_ACCESS
 docker compose --profile app up --build
 ```
 
-Open http://localhost:8080 (`APP_PORT` changes the port). Three services start: Postgres (`db`), the Go API (`backend`, built from `backend/Dockerfile`) and `frontend` (nginx, built from `frontend/Dockerfile`), which serves the UI and proxies `/api` and `/healthz` to the API, so the browser sees a single origin. Only the frontend port is published.
+Open http://localhost:8080 (`APP_PORT` changes the port). Three services start: Postgres (`db`), the Go API (`backend`, built from `backend/Dockerfile`) and `frontend` (nginx, built from `frontend/Dockerfile`), which serves the UI and proxies `/api` and `/healthz` to the API, so the browser sees a single origin. Only the frontend port is published. The frontend and backend share a small `edge` network with a fixed subnet (`APP_SUBNET`, default `172.29.250.0/24`) and the frontend has a fixed address on it (`FRONTEND_IP`, default `172.29.250.10`); the backend trusts `X-Forwarded-For` from that address only (`TRUSTED_PROXIES`), so a client cannot forge its IP for the per-IP rate limits. The network is created only with `--profile app`; if the subnet overlaps another Docker network on your machine, change the two variables. Behind your own TLS proxy or load balancer, add its address to `TRUSTED_PROXIES` too.
 
 - **Google OAuth:** create an OAuth client and add `http://localhost:8080/api/v1/auth/google/callback` (matching `GOOGLE_REDIRECT_URL`) as an authorized redirect URI. Without credentials the app starts but sign-in cannot complete.
 - **Cookies:** `COOKIE_SECURE=false` is for plain `http://localhost`. Behind HTTPS set it to `true` and put the public URL in `GOOGLE_REDIRECT_URL` and `CORS_ALLOWED_ORIGINS`.

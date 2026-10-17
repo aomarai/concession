@@ -3,12 +3,13 @@ package config
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 )
 
 // allConfigEnvKeys lists every env var Config reads.
 var allConfigEnvKeys = []string{
-	"DB_DRIVER", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT", "DB_SSLMODE",
+	"DB_DRIVER", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT", "DB_SSLMODE", "RATE_LIMIT_AUTH_PER_MINUTE", "RATE_LIMIT_IP_PER_MINUTE", "RATE_LIMIT_API_PER_MINUTE", "RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", "RATE_LIMIT_INVITES_PER_HOUR", "MAX_EVENT_STREAMS_PER_USER", "TRUSTED_PROXIES",
 	"DB_PATH", "ENV", "JWT_SECRET", "PORT",
 	"COOKIE_SECURE", "COOKIE_HTTP_ONLY", "COOKIE_SAME_SITE", "COOKIE_PATH", "COOKIE_DOMAIN",
 	"SESSION_COOKIE_NAME", "SESSION_COOKIE_MAX_AGE",
@@ -225,5 +226,79 @@ func TestLoadTreatsEmptyDBPortAsUnset(t *testing.T) {
 	}
 	if cfg.DBPort != "5432" {
 		t.Errorf("expected an empty DB_PORT to fall back to 5432, got %q", cfg.DBPort)
+	}
+}
+
+func TestRateLimitDefaults(t *testing.T) {
+	unsetAllConfigEnv(t)
+	cfg, err := Load(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for name, got := range map[string][2]int{
+		"auth/min":           {cfg.RateLimitAuthPerMinute, 30},
+		"ip/min":             {cfg.RateLimitIPPerMinute, 1200},
+		"api/min":            {cfg.RateLimitAPIPerMinute, 600},
+		"friend requests/hr": {cfg.RateLimitFriendRequestsPerHour, 30},
+		"invites/hr":         {cfg.RateLimitInvitesPerHour, 60},
+		"streams/user":       {cfg.MaxEventStreamsPerUser, 10},
+	} {
+		if got[0] != got[1] {
+			t.Errorf("%s default = %d, want %d", name, got[0], got[1])
+		}
+	}
+	if len(cfg.TrustedProxies) != 0 {
+		t.Errorf("no proxies are trusted by default, got %v", cfg.TrustedProxies)
+	}
+}
+
+func TestRateLimitOverridesAndZeroDisables(t *testing.T) {
+	unsetAllConfigEnv(t)
+	t.Setenv("RATE_LIMIT_AUTH_PER_MINUTE", "5")
+	t.Setenv("RATE_LIMIT_API_PER_MINUTE", "0") // an explicit 0 switches the limit off
+	t.Setenv("MAX_EVENT_STREAMS_PER_USER", "3")
+	cfg, err := Load(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.RateLimitAuthPerMinute != 5 || cfg.RateLimitAPIPerMinute != 0 || cfg.MaxEventStreamsPerUser != 3 {
+		t.Errorf("overrides not applied: %+v", cfg)
+	}
+}
+
+func TestTrustedProxiesAreParsedAndTrimmed(t *testing.T) {
+	unsetAllConfigEnv(t)
+	t.Setenv("TRUSTED_PROXIES", "10.0.0.0/8, 192.168.1.5 ,,")
+	cfg, err := Load(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.TrustedProxies) != 2 || cfg.TrustedProxies[0] != "10.0.0.0/8" || cfg.TrustedProxies[1] != "192.168.1.5" {
+		t.Errorf("TrustedProxies = %q", cfg.TrustedProxies)
+	}
+}
+
+func TestInvalidTrustedProxyIsRejected(t *testing.T) {
+	unsetAllConfigEnv(t)
+	t.Setenv("TRUSTED_PROXIES", "10.0.0.0/8,not-an-ip")
+	_, err := Load(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXIES") {
+		t.Errorf("expected an error naming TRUSTED_PROXIES, got %v", err)
+	}
+}
+
+func TestNegativeRateLimitsAreRejected(t *testing.T) {
+	for _, name := range []string{
+		"RATE_LIMIT_AUTH_PER_MINUTE", "RATE_LIMIT_IP_PER_MINUTE", "RATE_LIMIT_API_PER_MINUTE",
+		"RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", "RATE_LIMIT_INVITES_PER_HOUR", "MAX_EVENT_STREAMS_PER_USER",
+	} {
+		t.Run(name, func(t *testing.T) {
+			unsetAllConfigEnv(t)
+			t.Setenv(name, "-1")
+			_, err := Load(context.Background())
+			if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "0") {
+				t.Errorf("expected an error naming %s and pointing at 0 to disable, got %v", name, err)
+			}
+		})
 	}
 }

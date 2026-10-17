@@ -10,7 +10,22 @@ Every error uses the same shape:
 { "error": { "code": "unauthorized", "message": "Unauthorized" } }
 ```
 
-Codes in use: `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404; also returned for unknown routes), `method_not_allowed` (405), `conflict` (409), `internal_error` (500; also returned if a handler panics), `upstream_error` (502), `unhealthy` (503). Request bodies must be JSON and are limited to 1 MiB.
+Codes in use: `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404; also returned for unknown routes), `method_not_allowed` (405), `conflict` (409), `rate_limited` (429), `internal_error` (500; also returned if a handler panics), `upstream_error` (502), `unhealthy` (503). Request bodies must be JSON and are limited to 1 MiB.
+
+## Rate limits
+
+Limits are in memory and per server process (several instances multiply them), and are tuned with the environment variables in `docs/DEVELOPMENT.md`. A request over a limit gets `429` with code `rate_limited` and, for the request-rate limits, a `Retry-After` header (whole seconds until the next request would be allowed). The stream cap has no `Retry-After`: a slot frees whenever one of your streams closes.
+
+| What | Counted per | Default |
+|---|---|---|
+| Sign-in routes (`/auth/google/login`, `/auth/google/callback`, `/auth/logout`), one shared budget | client IP | 30 / minute |
+| Every authenticated route, charged *before* the session is looked up, so floods of missing or bad cookies cost something (a high ceiling meant for abuse, not for normal use behind a shared address) | client IP | 1200 / minute |
+| Every authenticated route, counted after the session is validated | user | 600 / minute |
+| Sending a friend request (`POST /friends`) | user | 30 / hour |
+| Sending a list invitation (`POST /watchlists/:id/collaborators`) | user | 60 / hour |
+| Open live-update streams (`GET /watchlists/:id/events`): a further stream gets `429` until one closes | user | 10 at a time |
+
+The client IP is the TCP peer unless the request comes through a proxy listed in `TRUSTED_PROXIES`, in which case the address in `X-Forwarded-For` is used (`X-Real-IP` is never believed). IPv6 clients are counted per /64. A limiter remembers at most 100,000 clients; beyond that new ones are let through untracked until idle entries are swept.
 
 ## Endpoints
 
