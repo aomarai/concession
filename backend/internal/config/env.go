@@ -149,6 +149,9 @@ func applyDefaults(cfg *Config) {
 	if _, ok := os.LookupEnv("ENV"); !ok {
 		cfg.Environment = "development"
 	}
+	if _, ok := os.LookupEnv("DB_PORT"); !ok {
+		cfg.DBPort = "5432" // an empty port makes the postgres DSN unparsable
+	}
 	if _, ok := os.LookupEnv("COOKIE_SECURE"); !ok {
 		cfg.CookieSecure = true
 	}

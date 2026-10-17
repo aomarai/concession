@@ -21,7 +21,7 @@ All settings are environment variables (a `backend/.env` file is loaded if prese
 | Variable | Purpose |
 |---|---|
 | `DB_DRIVER` | `sqlite` (default) or `postgres` |
-| `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` | Postgres connection |
+| `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` | Postgres connection (`DB_PORT` defaults to `5432`) |
 | `DB_PATH` | SQLite file (default `concession.db`) |
 | `PORT` | Listen port (default `8080`) |
 | `COOKIE_SECURE` | Defaults to `true`; set `false` for plain-http local dev |

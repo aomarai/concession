@@ -66,6 +66,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.Environment != "development" {
 		t.Errorf("expected Environment default %q, got %q", "development", cfg.Environment)
 	}
+	if cfg.DBPort != "5432" {
+		t.Errorf("expected DBPort default %q, got %q", "5432", cfg.DBPort)
+	}
 	if !cfg.CookieSecure {
 		t.Error("expected CookieSecure to default to true")
 	}
@@ -96,7 +99,6 @@ func TestLoadFieldsWithoutDefaultsAreEmpty(t *testing.T) {
 		"DBUser":             cfg.DBUser,
 		"DBPassword":         cfg.DBPassword,
 		"DBName":             cfg.DBName,
-		"DBPort":             cfg.DBPort,
 		"DBPath":             cfg.DBPath,
 		"JWTSecret":          cfg.JWTSecret,
 		"Port":               cfg.Port,
@@ -120,7 +122,7 @@ func TestLoadReadsEnvVars(t *testing.T) {
 	t.Setenv("DB_USER", "concession")
 	t.Setenv("DB_PASSWORD", "hunter2")
 	t.Setenv("DB_NAME", "concession_prod")
-	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_PORT", "6543")
 	t.Setenv("ENV", "production")
 	t.Setenv("JWT_SECRET", "top-secret")
 	t.Setenv("PORT", "8080")
@@ -152,7 +154,7 @@ func TestLoadReadsEnvVars(t *testing.T) {
 		{"DBUser", cfg.DBUser, "concession"},
 		{"DBPassword", cfg.DBPassword, "hunter2"},
 		{"DBName", cfg.DBName, "concession_prod"},
-		{"DBPort", cfg.DBPort, "5432"},
+		{"DBPort", cfg.DBPort, "6543"},
 		{"Environment", cfg.Environment, "production"},
 		{"JWTSecret", cfg.JWTSecret, "top-secret"},
 		{"Port", cfg.Port, "8080"},
