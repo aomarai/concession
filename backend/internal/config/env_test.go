@@ -8,7 +8,7 @@ import (
 
 // allConfigEnvKeys lists every env var Config reads.
 var allConfigEnvKeys = []string{
-	"DB_DRIVER", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT",
+	"DB_DRIVER", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_PORT", "DB_SSLMODE",
 	"DB_PATH", "ENV", "JWT_SECRET", "PORT",
 	"COOKIE_SECURE", "COOKIE_HTTP_ONLY", "COOKIE_SAME_SITE", "COOKIE_PATH", "COOKIE_DOMAIN",
 	"SESSION_COOKIE_NAME", "SESSION_COOKIE_MAX_AGE",
@@ -66,6 +66,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.Environment != "development" {
 		t.Errorf("expected Environment default %q, got %q", "development", cfg.Environment)
 	}
+	if cfg.DBPort != "5432" {
+		t.Errorf("expected DBPort default %q, got %q", "5432", cfg.DBPort)
+	}
 	if !cfg.CookieSecure {
 		t.Error("expected CookieSecure to default to true")
 	}
@@ -96,8 +99,8 @@ func TestLoadFieldsWithoutDefaultsAreEmpty(t *testing.T) {
 		"DBUser":             cfg.DBUser,
 		"DBPassword":         cfg.DBPassword,
 		"DBName":             cfg.DBName,
-		"DBPort":             cfg.DBPort,
 		"DBPath":             cfg.DBPath,
+		"DBSSLMode":          cfg.DBSSLMode,
 		"JWTSecret":          cfg.JWTSecret,
 		"Port":               cfg.Port,
 		"CookieDomain":       cfg.CookieDomain,
@@ -120,7 +123,8 @@ func TestLoadReadsEnvVars(t *testing.T) {
 	t.Setenv("DB_USER", "concession")
 	t.Setenv("DB_PASSWORD", "hunter2")
 	t.Setenv("DB_NAME", "concession_prod")
-	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_PORT", "6543")
+	t.Setenv("DB_SSLMODE", "verify-full")
 	t.Setenv("ENV", "production")
 	t.Setenv("JWT_SECRET", "top-secret")
 	t.Setenv("PORT", "8080")
@@ -152,7 +156,8 @@ func TestLoadReadsEnvVars(t *testing.T) {
 		{"DBUser", cfg.DBUser, "concession"},
 		{"DBPassword", cfg.DBPassword, "hunter2"},
 		{"DBName", cfg.DBName, "concession_prod"},
-		{"DBPort", cfg.DBPort, "5432"},
+		{"DBPort", cfg.DBPort, "6543"},
+		{"DBSSLMode", cfg.DBSSLMode, "verify-full"},
 		{"Environment", cfg.Environment, "production"},
 		{"JWTSecret", cfg.JWTSecret, "top-secret"},
 		{"Port", cfg.Port, "8080"},
@@ -208,5 +213,17 @@ func TestLoadCookieSecureBooleanParsing(t *testing.T) {
 				t.Errorf("expected CookieSecure=%v for COOKIE_SECURE=%q, got %v", tc.want, tc.value, cfg.CookieSecure)
 			}
 		})
+	}
+}
+
+func TestLoadTreatsEmptyDBPortAsUnset(t *testing.T) {
+	unsetAllConfigEnv(t)
+	t.Setenv("DB_PORT", "")
+	cfg, err := Load(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DBPort != "5432" {
+		t.Errorf("expected an empty DB_PORT to fall back to 5432, got %q", cfg.DBPort)
 	}
 }

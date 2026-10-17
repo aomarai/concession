@@ -94,6 +94,7 @@ type Config struct {
 	DBPassword           string `env:"DB_PASSWORD"`
 	DBName               string `env:"DB_NAME"`
 	DBPort               string `env:"DB_PORT"`
+	DBSSLMode            string `env:"DB_SSLMODE"` // postgres sslmode; empty means "disable"
 	DBPath               string `env:"DB_PATH"`
 	Environment          string `env:"ENV"`
 	JWTSecret            string `env:"JWT_SECRET"`
@@ -148,6 +149,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if _, ok := os.LookupEnv("ENV"); !ok {
 		cfg.Environment = "development"
+	}
+	if cfg.DBPort == "" {
+		cfg.DBPort = "5432" // an empty port makes the postgres DSN unparsable
 	}
 	if _, ok := os.LookupEnv("COOKIE_SECURE"); !ok {
 		cfg.CookieSecure = true

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -170,6 +171,19 @@ func TestRunDefaultsToPort8080WhenUnset(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestPostgresDSN(t *testing.T) {
+	base := &config.Config{DBHost: "db", DBPort: "5432", DBUser: "u", DBPassword: "p", DBName: "n"}
+	want := "host=db user=u password=p dbname=n port=5432 sslmode=%s"
+	if got := postgresDSN(base); got != fmt.Sprintf(want, "disable") {
+		t.Errorf("default sslmode should stay disable, got %q", got)
+	}
+	secure := *base
+	secure.DBSSLMode = "verify-full"
+	if got := postgresDSN(&secure); got != fmt.Sprintf(want, "verify-full") {
+		t.Errorf("DB_SSLMODE should be used, got %q", got)
+	}
 }
 
 func TestInitDBPostgresUnreachable(t *testing.T) {
