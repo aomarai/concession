@@ -33,6 +33,7 @@ services:
       DB_DRIVER: postgres
       DB_HOST: db
       DB_PORT: "5432"
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
       DB_USER: ${DB_USER:-concession}
       DB_PASSWORD: ${DB_PASSWORD:-concession}
       DB_NAME: ${DB_NAME:-concession}

@@ -30,16 +30,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// postgresDSN builds the connection string. TLS stays off unless DB_SSLMODE
+// says otherwise, which suits the local compose Postgres; use "verify-full"
+// (or at least "require") for a database reached over a network.
+func postgresDSN(cfg *config.Config) string {
+	sslmode := cfg.DBSSLMode
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+	return fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+		cfg.DBHost, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBPort, sslmode,
+	)
+}
+
 func initDB(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 
 	if cfg.DBDriver == "postgres" {
 		slog.Info("Initializing database", "database", "PostgreSQL")
-		dsn := fmt.Sprintf(
-			"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-			cfg.DBHost, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBPort,
-		)
-		dialector = postgres.Open(dsn)
+		dialector = postgres.Open(postgresDSN(cfg))
 	} else {
 		slog.Info("Initializing database", "database", "SQLite")
 		dbURI := cfg.DBPath
