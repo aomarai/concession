@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aomarai/concession/internal/ratelimit"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -68,7 +69,16 @@ type api struct {
 // newAPI mounts the watchlist and progress routes behind a stub auth
 // middleware: the X-Test-User header becomes the authenticated user, and a
 // request without it reaches the handler unauthenticated.
-func newAPI(t *testing.T) *api {
+func newAPI(t *testing.T) *api { return newAPIWithLimits(t, testLimits{}) }
+
+// testLimits are the optional rate limits to mount (nil means unlimited).
+type testLimits struct {
+	friendRequests *ratelimit.Limiter
+	invites        *ratelimit.Limiter
+	streams        *ratelimit.Gate
+}
+
+func newAPIWithLimits(t *testing.T, lim testLimits) *api {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db := testutil.NewDB(t, &domain.User{}, &domain.Movie{}, &domain.Show{}, &domain.Genre{}, &domain.Review{},
@@ -89,11 +99,17 @@ func newAPI(t *testing.T) *api {
 	fs.Notifier = notifs
 	hub := events.NewHub()
 	wl.Events = hub
-	NewEventsHandler(wl, hub, 30*time.Millisecond).RegisterRoutes(g)
+	eh := NewEventsHandler(wl, hub, 30*time.Millisecond)
+	eh.LimitStreams(lim.streams)
+	eh.RegisterRoutes(g)
 	NewNotificationHandler(notifs).RegisterRoutes(g)
-	NewFriendHandler(fs).RegisterRoutes(g)
+	fh := NewFriendHandler(fs)
+	fh.LimitSend(RateLimit(lim.friendRequests, UserKey))
+	fh.RegisterRoutes(g)
 	NewWatchlistHandler(wl).RegisterRoutes(g)
-	NewCollaborationHandler(wl).RegisterRoutes(g)
+	ch := NewCollaborationHandler(wl)
+	ch.LimitInvites(RateLimit(lim.invites, UserKey))
+	ch.RegisterRoutes(g)
 	NewProgressHandler(progress.NewService(db, cat)).RegisterRoutes(g)
 	NewReviewHandler(reviews.NewService(db, cat)).RegisterRoutes(g)
 	return &api{t: t, db: db, router: r, hub: hub}

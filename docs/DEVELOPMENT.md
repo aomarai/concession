@@ -28,6 +28,12 @@ All settings are environment variables (a `backend/.env` file is loaded if prese
 | `COOKIE_SECURE` | Defaults to `true`; set `false` for plain-http local dev |
 | `COOKIE_SAME_SITE` | `lax` (default), `strict`, `none` (requires `COOKIE_SECURE=true`) |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_REDIRECT_URL` | Google OAuth login |
+| `RATE_LIMIT_AUTH_PER_MINUTE` | Sign-in routes per client IP (default `30`) |
+| `RATE_LIMIT_API_PER_MINUTE` | All authenticated routes per user (default `600`) |
+| `RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR` | Friend requests sent per user (default `30`) |
+| `RATE_LIMIT_INVITES_PER_HOUR` | List invitations sent per user (default `60`) |
+| `MAX_EVENT_STREAMS_PER_USER` | Concurrent live-update streams per user (default `10`) |
+| `TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is believed when finding the client IP. Empty (default) trusts none. **Behind a proxy set this**, otherwise every visitor shares the proxy's address and the per-IP sign-in limit applies to all of them at once; trust only proxies you control or anyone can spoof their address. An explicit `0` for any limit above switches it off |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins (default `http://localhost:5173`) |
 | `TMDB_READ_ACCESS_TOKEN` | TMDB v4 "API Read Access Token" (bearer). Without it the catalog endpoints fail with 502 and the server logs a warning |
 | `TMDB_BASE_URL` | Override the TMDB API URL (tests/proxies); default `https://api.themoviedb.org/3` |

@@ -60,6 +60,7 @@ concession/
 - Format with `gofmt`; CI rejects unformatted code.
 - **Frontend:** work test-first (Vitest + Testing Library, `vi.mock('../api/endpoints')`; never hit a real backend in tests). `npm test` enforces **100%** statement/branch/function/line coverage (`frontend/vite.config.ts`; only `main.tsx` is excluded). All HTTP goes through `src/api/client.ts` (`/api/v1`, cookie session, `ApiError` from the error envelope). Dev server proxies `/api` to the backend (`BACKEND_URL`, default `http://localhost:8080`).
 
+- **Rate limits:** `internal/ratelimit` (in-memory token bucket and a concurrency gate; a nil limiter allows everything, which is how a limit is switched off). Apply with `handlers.RateLimit(limiter, handlers.ClientIPKey|UserKey)`; routes that need their own budget get it through a `Limit*` setter on their handler, wired in `setupRouter` from config. Denials are `429` `rate_limited` with `Retry-After`. The client IP honours `X-Forwarded-For` only from `TRUSTED_PROXIES`.
 - **Containers:** the backend image needs cgo (sqlite driver), so it is built and run on Debian. The frontend image is nginx serving the SPA and proxying `/api` (unbuffered, long read timeout for SSE). The `docker` CI job builds and smoke-tests the stack; keep `docker compose --profile app` working.
 
 ## Configuration

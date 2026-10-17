@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -84,6 +85,11 @@ func (c *Config) Validate() error {
 	if sameSiteFromString(c.CookieSameSite) == http.SameSiteNoneMode && !c.CookieSecure {
 		return errors.New("COOKIE_SAME_SITE=None requires COOKIE_SECURE=true (modern browsers reject insecure SameSite=None cookies)")
 	}
+	for _, p := range c.TrustedProxies {
+		if _, _, err := net.ParseCIDR(p); err != nil && net.ParseIP(p) == nil {
+			return fmt.Errorf("TRUSTED_PROXIES: %q is neither an IP address nor a CIDR range", p)
+		}
+	}
 	return nil
 }
 
@@ -114,6 +120,18 @@ type Config struct {
 
 	// CORSAllowedOrigins is a comma-separated list of allowed browser origins.
 	CORSAllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS"`
+
+	// Rate limits (in-memory, per process). An explicit 0 switches a limit off.
+	RateLimitAuthPerMinute         int `env:"RATE_LIMIT_AUTH_PER_MINUTE"`          // sign-in routes, per client IP
+	RateLimitAPIPerMinute          int `env:"RATE_LIMIT_API_PER_MINUTE"`           // all authenticated routes, per user
+	RateLimitFriendRequestsPerHour int `env:"RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR"` // sending friend requests, per user
+	RateLimitInvitesPerHour        int `env:"RATE_LIMIT_INVITES_PER_HOUR"`         // sending list invitations, per user
+	MaxEventStreamsPerUser         int `env:"MAX_EVENT_STREAMS_PER_USER"`          // concurrent live-update streams
+
+	// TrustedProxies lists the proxies (IPs or CIDRs, comma-separated) whose
+	// X-Forwarded-For header is believed when finding the client IP. Empty
+	// trusts none, so the client IP is the TCP peer.
+	TrustedProxies []string `env:"TRUSTED_PROXIES"`
 
 	// TMDBReadAccessToken is the TMDB v4 "API Read Access Token" (bearer).
 	TMDBReadAccessToken string `env:"TMDB_READ_ACCESS_TOKEN"`
@@ -150,6 +168,8 @@ func applyDefaults(cfg *Config) {
 	if _, ok := os.LookupEnv("ENV"); !ok {
 		cfg.Environment = "development"
 	}
+	applyRateLimitDefaults(cfg)
+	cfg.TrustedProxies = trimmed(cfg.TrustedProxies)
 	if cfg.DBPort == "" {
 		cfg.DBPort = "5432" // an empty port makes the postgres DSN unparsable
 	}
@@ -174,4 +194,35 @@ func applyDefaults(cfg *Config) {
 	if _, ok := os.LookupEnv("OAUTH_STATE_COOKIE_NAME"); !ok {
 		cfg.OAuthStateCookieName = "oauth_state"
 	}
+}
+
+// applyRateLimitDefaults fills in each limit that was not set at all; an
+// explicit value (including 0, which disables the limit) is kept.
+func applyRateLimitDefaults(cfg *Config) {
+	for _, d := range []struct {
+		env string
+		dst *int
+		val int
+	}{
+		{"RATE_LIMIT_AUTH_PER_MINUTE", &cfg.RateLimitAuthPerMinute, 30},
+		{"RATE_LIMIT_API_PER_MINUTE", &cfg.RateLimitAPIPerMinute, 600},
+		{"RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR", &cfg.RateLimitFriendRequestsPerHour, 30},
+		{"RATE_LIMIT_INVITES_PER_HOUR", &cfg.RateLimitInvitesPerHour, 60},
+		{"MAX_EVENT_STREAMS_PER_USER", &cfg.MaxEventStreamsPerUser, 10},
+	} {
+		if _, ok := os.LookupEnv(d.env); !ok {
+			*d.dst = d.val
+		}
+	}
+}
+
+// trimmed drops blanks and surrounding spaces from a comma-separated list.
+func trimmed(in []string) []string {
+	var out []string
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aomarai/concession/internal/events"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/ratelimit"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/watchlist"
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,12 @@ type EventsHandler struct {
 	svc       *watchlist.Service
 	hub       *events.Hub
 	heartbeat time.Duration
+	streams   *ratelimit.Gate
 }
+
+// LimitStreams caps how many streams one user may hold open at once (nil, the
+// default, means no cap). Each stream holds a connection and a subscription.
+func (h *EventsHandler) LimitStreams(g *ratelimit.Gate) { h.streams = g }
 
 // NewEventsHandler creates the handler; a non-positive heartbeat means
 // DefaultHeartbeat.
@@ -57,6 +63,13 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 		RespondServiceError(c, err)
 		return
 	}
+
+	release, ok := h.streams.Acquire(userID.String())
+	if !ok {
+		RespondError(c, http.StatusTooManyRequests, "rate_limited", "Too many open live-update connections. Close another tab and try again.")
+		return
+	}
+	defer release()
 
 	// Subscribe before announcing readiness so no event can slip in between.
 	sub := h.hub.Subscribe(id)

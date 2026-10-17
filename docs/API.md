@@ -10,7 +10,21 @@ Every error uses the same shape:
 { "error": { "code": "unauthorized", "message": "Unauthorized" } }
 ```
 
-Codes in use: `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404; also returned for unknown routes), `method_not_allowed` (405), `conflict` (409), `internal_error` (500; also returned if a handler panics), `upstream_error` (502), `unhealthy` (503). Request bodies must be JSON and are limited to 1 MiB.
+Codes in use: `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404; also returned for unknown routes), `method_not_allowed` (405), `conflict` (409), `rate_limited` (429), `internal_error` (500; also returned if a handler panics), `upstream_error` (502), `unhealthy` (503). Request bodies must be JSON and are limited to 1 MiB.
+
+## Rate limits
+
+Limits are in memory and per server process (several instances multiply them), and are tuned with the environment variables in `docs/DEVELOPMENT.md`. A request over a limit gets `429` with code `rate_limited` and a `Retry-After` header (whole seconds until the next request would be allowed).
+
+| What | Counted per | Default |
+|---|---|---|
+| Sign-in routes (`/auth/google/login`, `/auth/google/callback`, `/auth/logout`), one shared budget | client IP | 30 / minute |
+| Every authenticated route (counted after the session is validated, so anonymous requests are plain `401`s) | user | 600 / minute |
+| Sending a friend request (`POST /friends`) | user | 30 / hour |
+| Sending a list invitation (`POST /watchlists/:id/collaborators`) | user | 60 / hour |
+| Open live-update streams (`GET /watchlists/:id/events`): a further stream gets `429` until one closes | user | 10 at a time |
+
+The client IP is the TCP peer unless the request comes through a proxy listed in `TRUSTED_PROXIES`, in which case the address in `X-Forwarded-For` is used.
 
 ## Endpoints
 
