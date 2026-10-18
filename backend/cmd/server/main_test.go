@@ -216,7 +216,7 @@ func TestSetupRouterRoutes(t *testing.T) {
 	watchlistSvc := watchlist.NewService(db, catalogSvc)
 	r := setupRouter(db, cfg, apiHandlers{
 		Auth:      handlers.NewAuthHandler(db, cfg),
-		User:      handlers.NewUserHandler(db),
+		User:      handlers.NewUserHandler(db, cfg),
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
 		Watchlist: handlers.NewWatchlistHandler(watchlistSvc),
 		Collab:    handlers.NewCollaborationHandler(watchlistSvc),
@@ -633,7 +633,7 @@ func TestRouterAnswersErrorsInTheStandardShape(t *testing.T) {
 	watchlistSvc := watchlist.NewService(db, catalogSvc)
 	r := setupRouter(db, cfg, apiHandlers{
 		Auth:      handlers.NewAuthHandler(db, cfg),
-		User:      handlers.NewUserHandler(db),
+		User:      handlers.NewUserHandler(db, cfg),
 		Catalog:   handlers.NewCatalogHandler(catalogSvc),
 		Watchlist: handlers.NewWatchlistHandler(watchlistSvc),
 		Collab:    handlers.NewCollaborationHandler(watchlistSvc),

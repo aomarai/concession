@@ -42,7 +42,8 @@ func TestDifferentKeysDoNotBlockEachOther(t *testing.T) {
 	unlockA := l.Lock("a")
 	done := make(chan struct{})
 	go func() {
-		defer l.Lock("b")()
+		unlockB := l.Lock("b")
+		unlockB()
 		close(done)
 	}()
 	select {

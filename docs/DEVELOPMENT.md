@@ -65,6 +65,17 @@ Conventions:
 - Randomness sources are package variables (`randRead`) so entropy failures can be simulated.
 - New code should land with tests; the goal is ~100% statement coverage.
 
+### Postgres-backed tests
+
+The unit tests run on in-memory SQLite, which creates no foreign keys. Tests that depend on Postgres enforcing them (account deletion, `TestPurgeUserOnPostgres`) run only when `TEST_POSTGRES_DSN` is set; CI sets it against a Postgres service. Locally:
+
+```sh
+docker compose up -d db
+cd backend && TEST_POSTGRES_DSN="host=localhost user=concession password=concession dbname=concession port=5432 sslmode=disable" go test ./internal/domain -run Postgres
+```
+
+The test works in a private schema it drops afterwards, so it is safe to point at the dev database.
+
 ### Coverage ratchet
 
 `backend/.coverage-threshold` holds the minimum total coverage. CI runs `scripts/coverage.sh --summary`, which fails the build below that number and prints per-function gaps in the job summary. When coverage improves, raise the threshold in the same PR; never lower it to get a PR green. Coverage status per phase is tracked in the "Test coverage tracker" GitHub issue.

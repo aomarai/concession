@@ -27,8 +27,8 @@ func newMeRouter(t *testing.T, db *gorm.DB) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	h := NewAuthHandler(db, newTestConfig(true))
 	r := gin.New()
-	r.GET("/me", h.AuthMiddleware(), NewUserHandler(db).HandleGetMe)
-	r.GET("/me-no-mw", NewUserHandler(db).HandleGetMe)
+	r.GET("/me", h.AuthMiddleware(), NewUserHandler(db, newTestConfig(true)).HandleGetMe)
+	r.GET("/me-no-mw", NewUserHandler(db, newTestConfig(true)).HandleGetMe)
 	return r
 }
 

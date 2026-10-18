@@ -35,7 +35,9 @@ The client IP is the TCP peer unless the request comes through a proxy listed in
 | GET | `/api/v1/auth/google/login` | no | Starts Google OAuth; sets `oauth_state` cookie and redirects to Google |
 | GET | `/api/v1/auth/google/callback` | no | Completes login; sets `session_token` cookie and redirects to `/` |
 | POST | `/api/v1/auth/logout` | no | Revokes the session and clears the cookie |
-| GET | `/api/v1/me` | yes | The current user |
+| GET | `/api/v1/me` | yes | The current user, including their own e-mail address |
+| PATCH | `/api/v1/me` | yes | Body with `display_name` and/or `username`. `display_name`: 1-50 characters, no control characters. `username`: 3-32 characters of `a-z`, `0-9`, `.`, `_`, `-` (upper case is lower-cased; no `@`, so it can never look like an e-mail address). Any invalid field rejects the whole request (`400`); a taken username is `409`. Returns the updated user. New accounts start with their Google e-mail as the username, which stays valid until changed |
+| DELETE | `/api/v1/me` | yes | Permanently deletes the account. Body `{"confirm": "<your username or e-mail>"}` (any case), otherwise `400` and nothing is deleted. Removes your lists (with their items and members), memberships, reviews, watch progress, friendships, notifications to you and about you, sessions and the Google link, and clears the session cookie. Items you added to other people's lists stay, attributed to the list's owner. The e-mail address is freed, so the same Google account can sign up again as a new, empty account. `204` |
 | GET | `/api/v1/search?q=&page=` | yes | Search movies and TV shows on TMDB (people are filtered out). Empty `q` returns no results. `page` ≥ 1 |
 | GET | `/api/v1/movies/:tmdb_id` | yes | A movie by TMDB ID, with genres and top-billed actors |
 | GET | `/api/v1/shows/:tmdb_id` | yes | A show by TMDB ID, with genres and season summaries |

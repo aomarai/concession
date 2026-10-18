@@ -15,6 +15,7 @@ import (
 	"github.com/aomarai/concession/internal/userref"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Notifier delivers notifications; *notifications.Service implements it. It
@@ -90,29 +91,43 @@ func (s *Service) Send(ctx context.Context, me uuid.UUID, ref userref.Ref) (*Ent
 	lo, hi := domain.OrderedPair(me, target.ID)
 
 	defer s.locks.Lock("friends:" + lo.String() + hi.String())()
-	db := s.DB.WithContext(ctx)
 	var f domain.Friendship
-	err = db.Where("user_a_id = ? AND user_b_id = ?", lo, hi).First(&f).Error
-	switch {
-	case err == nil && f.Status == domain.FriendshipAccepted:
-		return nil, svcerr.Duplicate("You are already friends")
-	case err == nil && f.RequestedBy == me:
-		return nil, svcerr.Duplicate("You have already sent this person a friend request")
-	case err == nil:
-		// They asked first: saying yes is the only sensible reading.
-		if err := s.accept(ctx, &f); err != nil {
-			return nil, err
+	var typ domain.NotificationType
+	// Share-lock the target while the row is written: an account deletion
+	// (domain.PurgeUser) locks the user FOR UPDATE first, so it either
+	// finishes before this starts (the target is then not found) or waits
+	// for this to commit and then removes the new friendship with the user.
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked domain.User
+		err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id").First(&locked, "id = ?", target.ID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return svcerr.ErrNotFound
 		}
-		s.notify(ctx, target.ID, me, domain.NotificationFriendAccepted)
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		f = domain.Friendship{UserAID: lo, UserBID: hi, RequestedBy: me, Status: domain.FriendshipPending}
-		if err := db.Create(&f).Error; err != nil {
-			return nil, err
+		if err != nil {
+			return err
 		}
-		s.notify(ctx, target.ID, me, domain.NotificationFriendRequest)
-	default:
+		err = tx.Where("user_a_id = ? AND user_b_id = ?", lo, hi).First(&f).Error
+		switch {
+		case err == nil && f.Status == domain.FriendshipAccepted:
+			return svcerr.Duplicate("You are already friends")
+		case err == nil && f.RequestedBy == me:
+			return svcerr.Duplicate("You have already sent this person a friend request")
+		case err == nil:
+			// They asked first: saying yes is the only sensible reading.
+			typ = domain.NotificationFriendAccepted
+			return s.accept(tx, &f)
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			f = domain.Friendship{UserAID: lo, UserBID: hi, RequestedBy: me, Status: domain.FriendshipPending}
+			typ = domain.NotificationFriendRequest
+			return tx.Create(&f).Error
+		default:
+			return err
+		}
+	})
+	if err != nil {
 		return nil, err
 	}
+	s.notify(ctx, target.ID, me, typ)
 	entries, err := s.entries(ctx, me, []domain.Friendship{f})
 	if err != nil {
 		return nil, err
@@ -120,9 +135,9 @@ func (s *Service) Send(ctx context.Context, me uuid.UUID, ref userref.Ref) (*Ent
 	return &entries[0], nil
 }
 
-func (s *Service) accept(ctx context.Context, f *domain.Friendship) error {
+func (s *Service) accept(db *gorm.DB, f *domain.Friendship) error {
 	now := time.Now()
-	if err := s.DB.WithContext(ctx).Model(f).Updates(map[string]any{"status": domain.FriendshipAccepted, "accepted_at": now}).Error; err != nil {
+	if err := db.Model(f).Updates(map[string]any{"status": domain.FriendshipAccepted, "accepted_at": now}).Error; err != nil {
 		return err
 	}
 	f.Status, f.AcceptedAt = domain.FriendshipAccepted, &now
@@ -146,7 +161,7 @@ func (s *Service) Accept(ctx context.Context, me, requestID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.accept(ctx, &f); err != nil {
+	if err := s.accept(s.DB.WithContext(ctx), &f); err != nil {
 		return err
 	}
 	s.notify(ctx, f.RequestedBy, me, domain.NotificationFriendAccepted)
