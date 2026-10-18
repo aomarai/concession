@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "concession.fullname" . }}
+  labels:
+    {{- include "concession.labels" . | nindent 4 }}
+data:
+  ENV: "production"
+  PORT: "8080"
+  DB_DRIVER: "postgres"
+  DB_HOST: {{ required "database.host is required" .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  DB_USER: {{ .Values.database.user | quote }}
+  DB_SSLMODE: {{ .Values.database.sslMode | quote }}
+  COOKIE_SECURE: {{ .Values.tls | quote }}
+  COOKIE_SAME_SITE: "lax"
+  GOOGLE_REDIRECT_URL: {{ printf "%s://%s/api/v1/auth/google/callback" (include "concession.scheme" .) .Values.host | quote }}
+  CORS_ALLOWED_ORIGINS: {{ printf "%s://%s" (include "concession.scheme" .) .Values.host | quote }}
+  {{- with .Values.trustedProxies }}
+  TRUSTED_PROXIES: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.rateLimits }}
+  {{- if hasKey . "authPerMinute" }}
+  RATE_LIMIT_AUTH_PER_MINUTE: {{ .authPerMinute | quote }}
+  {{- end }}
+  {{- if hasKey . "ipPerMinute" }}
+  RATE_LIMIT_IP_PER_MINUTE: {{ .ipPerMinute | quote }}
+  {{- end }}
+  {{- if hasKey . "apiPerMinute" }}
+  RATE_LIMIT_API_PER_MINUTE: {{ .apiPerMinute | quote }}
+  {{- end }}
+  {{- if hasKey . "friendRequestsPerHour" }}
+  RATE_LIMIT_FRIEND_REQUESTS_PER_HOUR: {{ .friendRequestsPerHour | quote }}
+  {{- end }}
+  {{- if hasKey . "invitesPerHour" }}
+  RATE_LIMIT_INVITES_PER_HOUR: {{ .invitesPerHour | quote }}
+  {{- end }}
+  {{- if hasKey . "maxEventStreamsPerUser" }}
+  MAX_EVENT_STREAMS_PER_USER: {{ .maxEventStreamsPerUser | quote }}
+  {{- end }}
+  {{- end }}

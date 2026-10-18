@@ -1,0 +1,66 @@
+# Container images. Build and push them from backend/Dockerfile and
+# frontend/Dockerfile, then set the repositories and tags here.
+backend:
+  image:
+    repository: concession-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources: {}
+
+frontend:
+  image:
+    repository: concession-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources: {}
+
+# Public address of the site. The frontend proxies /api, so the browser sees one
+# origin; this host is used for the ingress, the Google redirect URL and CORS.
+host: concession.example.com
+# Set to false when TLS is not terminated in front of the ingress (the session
+# cookie is then sent without the Secure flag).
+tls: true
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Name of a TLS secret for the host; leave empty for no TLS block.
+  tlsSecretName: ""
+
+# Postgres is not bundled: point at a managed or existing database.
+database:
+  host: ""
+  port: 5432
+  name: concession
+  user: concession
+  # disable, require, verify-ca or verify-full
+  sslMode: require
+
+# Client IPs/CIDRs of the pods or load balancers allowed to set X-Forwarded-For
+# (the frontend pods' network, usually the cluster pod CIDR). Empty means the
+# per-IP rate limits see the frontend pod's address.
+trustedProxies: ""
+
+# Rate limits are per backend process; omit a key to use the default, set 0 to
+# switch a limit off.
+rateLimits: {}
+#  authPerMinute: 30
+#  ipPerMinute: 1200
+#  apiPerMinute: 600
+#  friendRequestsPerHour: 30
+#  invitesPerHour: 60
+#  maxEventStreamsPerUser: 10
+
+# Secrets. Either let the chart create one from the values below (convenient,
+# but the values end up in Helm's release history) or create a Secret yourself
+# with these keys and name it in existingSecret:
+#   DB_PASSWORD, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TMDB_READ_ACCESS_TOKEN
+existingSecret: ""
+secrets:
+  dbPassword: ""
+  googleClientId: ""
+  googleClientSecret: ""
+  tmdbReadAccessToken: ""

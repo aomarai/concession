@@ -10,6 +10,7 @@ Progress is tracked in GitHub issues (one per phase, see "Roadmap") with a branc
 concession/
 ├── .devcontainer/          # Dev container (Go + Node)
 ├── .github/workflows/      # CI (gofmt, vet, test; frontend build when present)
+├── deploy/helm/concession/ # Helm chart (API + frontend; external Postgres; not yet linted/rendered in CI)
 ├── docker-compose.yml      # Local Postgres; `--profile app` adds the API and frontend containers
 ├── .env.example            # Variables for docker compose (copy to .env)
 ├── backend/                # Go module github.com/aomarai/concession (Dockerfile)
