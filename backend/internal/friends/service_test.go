@@ -343,7 +343,8 @@ func TestDatabaseFailures(t *testing.T) {
 		{"send: resolve user", "query", "users", 0, nil, func(e *env, a, b uuid.UUID) error { _, err := e.svc.Send(ctx, a, byName("bob")); return err }},
 		{"send: lookup", "query", "friendships", 0, nil, func(e *env, a, b uuid.UUID) error { _, err := e.svc.Send(ctx, a, byName("bob")); return err }},
 		{"send: insert", "create", "friendships", 0, nil, func(e *env, a, b uuid.UUID) error { _, err := e.svc.Send(ctx, a, byName("bob")); return err }},
-		{"send: profile", "query", "users", 1, nil, func(e *env, a, b uuid.UUID) error { _, err := e.svc.Send(ctx, a, byName("bob")); return err }},
+		{"send: lock target", "query", "users", 1, nil, func(e *env, a, b uuid.UUID) error { _, err := e.svc.Send(ctx, a, byName("bob")); return err }},
+		{"send: profile", "query", "users", 2, nil, func(e *env, a, b uuid.UUID) error { _, err := e.svc.Send(ctx, a, byName("bob")); return err }},
 		{"send: auto-accept", "update", "friendships", 0, pending, func(e *env, a, b uuid.UUID) error { _, err := e.svc.Send(ctx, b, byName("ann")); return err }},
 		{"accept: lookup", "query", "friendships", 0, pending, func(e *env, a, b uuid.UUID) error { return e.svc.Accept(ctx, b, uuid.New()) }},
 		{"accept: update", "update", "friendships", 0, pending, func(e *env, a, b uuid.UUID) error { return e.svc.Accept(ctx, b, requestID(e, b)) }},
@@ -365,5 +366,28 @@ func TestDatabaseFailures(t *testing.T) {
 				t.Errorf("got %v", err)
 			}
 		})
+	}
+}
+
+func TestSendToAccountDeletedMeanwhile(t *testing.T) {
+	e := newEnv(t)
+	ann, bob := e.user(t, "ann"), e.user(t, "bob")
+	// Delete bob right after Send resolved him, before it locks his row.
+	seen := 0
+	err := e.db.Callback().Query().After("gorm:query").Register("test:delete-after-resolve", func(tx *gorm.DB) {
+		if seen++; seen == 1 {
+			e.db.Session(&gorm.Session{NewDB: true}).Exec("DELETE FROM users WHERE id = ?", bob)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Send(ctx, ann, byName("bob")); !errors.Is(err, svcerr.ErrNotFound) {
+		t.Errorf("got %v, want not found", err)
+	}
+	var n int64
+	e.db.Model(&domain.Friendship{}).Count(&n)
+	if n != 0 {
+		t.Errorf("%d friendships left", n)
 	}
 }

@@ -4,16 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/aomarai/concession/internal/testutil"
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // purgeScenario is two people who share a lot: a is purged, b must keep
@@ -237,41 +234,11 @@ func TestPurgeUserIsAllOrNothing(t *testing.T) {
 	}
 }
 
-// postgresSchema opens a private schema on the Postgres named by
-// TEST_POSTGRES_DSN, with the real foreign keys, or skips the test. The schema
-// is dropped afterwards, so it is safe to point at a shared database.
-func postgresSchema(t *testing.T) *gorm.DB {
-	t.Helper()
-	dsn := os.Getenv("TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("TEST_POSTGRES_DSN is not set")
-	}
-	schema := "purge_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Discard})
-	must(t, err)
-	must(t, admin.Exec("CREATE SCHEMA "+schema).Error)
-	t.Cleanup(func() {
-		admin.Exec("DROP SCHEMA " + schema + " CASCADE")
-		if sqlDB, err := admin.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	db, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{Logger: logger.Discard})
-	must(t, err)
-	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	must(t, db.AutoMigrate(allModels()...)) // with the real foreign keys
-	return db
-}
-
 // TestPurgeUserOnPostgres runs the full scenario on a real Postgres, where the
 // foreign keys are enforced (SQLite tests create none). It is skipped unless
 // TEST_POSTGRES_DSN is set; CI provides a Postgres service for it.
 func TestPurgeUserOnPostgres(t *testing.T) {
-	db := postgresSchema(t)
+	db := testutil.NewPostgresDB(t, allModels()...)
 	s := seedPurgeScenario(t, db)
 	must(t, PurgeUser(context.Background(), db, s.a.ID))
 	assertPurged(t, db, s)
@@ -282,7 +249,7 @@ func TestPurgeUserOnPostgres(t *testing.T) {
 // Without the lock on the user row, the purge would clear that table, then
 // fail at the final delete once the write commits (a foreign-key violation).
 func TestPurgeUserWaitsForInFlightWrites(t *testing.T) {
-	db := postgresSchema(t)
+	db := testutil.NewPostgresDB(t, allModels()...)
 	s := seedPurgeScenario(t, db)
 
 	inFlight := db.Begin()
@@ -311,7 +278,7 @@ func TestPurgeUserWaitsForInFlightWrites(t *testing.T) {
 // A user with more lists than Postgres allows bind parameters in one statement
 // (65,535) must still be deletable.
 func TestPurgeUserWithVeryManyLists(t *testing.T) {
-	db := postgresSchema(t)
+	db := testutil.NewPostgresDB(t, allModels()...)
 	s := seedPurgeScenario(t, db)
 	must(t, db.Exec(`INSERT INTO watchlists (id, owner_id, title, type, privacy, share_token, created_at, updated_at)
 		SELECT gen_random_uuid(), ?, 'bulk', 'movie', 'private', md5(random()::text || g::text), now(), now()
