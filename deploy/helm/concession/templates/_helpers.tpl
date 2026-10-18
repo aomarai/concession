@@ -1,5 +1,5 @@
 {{- define "concession.fullname" -}}
-{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 53 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "concession.labels" -}}

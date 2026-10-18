@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          image: "{{ .Values.frontend.image.repository }}:{{ required "frontend.image.tag is required" .Values.frontend.image.tag }}"
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           env:
             - name: BACKEND_URL
@@ -28,8 +28,10 @@ spec:
             - name: http
               containerPort: 80
           readinessProbe:
+            # The page itself, not /healthz (which the proxy forwards to the
+            # backend), so a database outage does not take the SPA offline.
             httpGet:
-              path: /healthz
+              path: /
               port: http
             periodSeconds: 10
           {{- with .Values.frontend.resources }}

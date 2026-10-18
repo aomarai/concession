@@ -3,15 +3,20 @@
 backend:
   image:
     repository: concession-backend
-    tag: latest
+    tag: ""   # required: use an immutable tag (or sha256 digest) per build
     pullPolicy: IfNotPresent
+  # Keep at 1 unless you accept the limits below: the live-update hub and the
+  # rate limits are per process, so with several replicas some live updates
+  # are missed and limits multiply; and every replica runs the schema
+  # migrations at start, so scale up only after the first replica is running.
   replicas: 1
+  podAnnotations: {}
   resources: {}
 
 frontend:
   image:
     repository: concession-frontend
-    tag: latest
+    tag: ""   # required: use an immutable tag (or sha256 digest) per build
     pullPolicy: IfNotPresent
   replicas: 1
   resources: {}
