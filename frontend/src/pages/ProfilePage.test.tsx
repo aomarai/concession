@@ -20,6 +20,7 @@ const review = (o: Partial<Review> = {}): Review => ({
 })
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', email: 'ada@example.com', display_name: 'Ada L', avatar_url: 'https://img.example/a.png' })
   vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [] })
   vi.mocked(api.listMyReviews).mockResolvedValue({ reviews: [], page: 1, per_page: 20, total: 0 })
@@ -87,6 +88,30 @@ describe('ProfilePage editing', () => {
     expect(screen.getByLabelText('Username')).toBeInTheDocument()
   })
 
+  it('cannot be cancelled while a save is in flight', async () => {
+    vi.mocked(api.updateMe).mockReturnValue(new Promise(() => {}))
+    await open()
+    await userEvent.type(screen.getByLabelText('Username'), 'x')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+  })
+
+  it('is not overwritten by a profile fetch that started before the save', async () => {
+    let finishStale!: (u: { id: string; username: string; display_name: string; avatar_url: string }) => void
+    const { client } = renderWithProviders(<ProfilePage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit profile' }))
+    vi.mocked(api.getMe).mockReturnValue(new Promise((resolve) => (finishStale = resolve)))
+    void client.refetchQueries({ queryKey: ['me'] })
+    vi.mocked(api.updateMe).mockResolvedValue({ id: 'u1', username: 'ada', display_name: 'Ada Lovelace', avatar_url: '' })
+    await userEvent.clear(screen.getByLabelText('Display name'))
+    await userEvent.type(screen.getByLabelText('Display name'), 'Ada Lovelace')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument()
+    finishStale({ id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '' })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.getByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument()
+  })
+
   it('cancels without saving', async () => {
     await open()
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -110,6 +135,22 @@ describe('ProfilePage account deletion', () => {
     expect(confirm).toBeDisabled()
     await userEvent.type(screen.getByLabelText(/type your username/i), 'A')
     expect(confirm).toBeEnabled()
+  })
+
+  it('rejects a wrong value as long as the username', async () => {
+    await open()
+    await userEvent.type(screen.getByLabelText(/type your username/i), 'xyz')
+    expect(screen.getByRole('button', { name: 'Permanently delete' })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/type your username/i), '{Enter}')
+    expect(api.deleteMe).not.toHaveBeenCalled()
+  })
+
+  it('cannot be cancelled while the deletion is in flight', async () => {
+    vi.mocked(api.deleteMe).mockReturnValue(new Promise(() => {}))
+    await open()
+    await userEvent.type(screen.getByLabelText(/type your username/i), 'ada')
+    await userEvent.click(screen.getByRole('button', { name: 'Permanently delete' }))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
   })
 
   it('accepts the e-mail address too, then signs out', async () => {

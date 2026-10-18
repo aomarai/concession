@@ -51,6 +51,19 @@ describe('App auth gate', () => {
     expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
   })
 
+  it('shows the sign-in page after you delete your account', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [] })
+    vi.mocked(api.listMyReviews).mockResolvedValue({ reviews: [], page: 1, per_page: 20, total: 0 })
+    vi.mocked(api.deleteMe).mockResolvedValue()
+    renderWithProviders(<App />, { route: '/profile' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete account' }))
+    await userEvent.type(screen.getByLabelText(/type your username/i), 'ada')
+    vi.mocked(api.getMe).mockRejectedValue(new ApiError(401, 'unauthorized', 'no'))
+    await userEvent.click(screen.getByRole('button', { name: 'Permanently delete' }))
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
+  })
+
   it('shows a not-found page for unknown routes', async () => {
     vi.mocked(api.getMe).mockResolvedValue(me)
     renderWithProviders(<App />, { route: '/nope' })

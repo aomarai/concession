@@ -33,7 +33,9 @@ function EditProfile({ user, onDone }: { user: User; onDone: () => void }) {
   if (username !== user.username) changes.username = username
   const save = useMutation({
     mutationFn: () => updateMe(changes),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
+      // A fetch that started before the save would otherwise land after it with the old profile.
+      await qc.cancelQueries({ queryKey: ['me'] })
       qc.setQueryData(['me'], updated)
       onDone()
     },
@@ -57,7 +59,7 @@ function EditProfile({ user, onDone }: { user: User; onDone: () => void }) {
       {save.isError && <Alert message={errorMessage(save.error)} />}
       <div className="flex gap-2">
         <button type="submit" disabled={Object.keys(changes).length === 0 || save.isPending} className={buttonClass}>Save</button>
-        <button type="button" onClick={onDone} className={buttonClass}>Cancel</button>
+        <button type="button" onClick={onDone} disabled={save.isPending} className={buttonClass}>Cancel</button>
       </div>
     </form>
   )
@@ -91,7 +93,7 @@ function DeleteAccount({ user, onDone }: { user: User; onDone: () => void }) {
       {remove.isError && <Alert message={errorMessage(remove.error)} />}
       <div className="flex gap-2">
         <button type="submit" disabled={!matches || remove.isPending} className="rounded bg-red-700 px-3 py-1 text-sm disabled:opacity-50">Permanently delete</button>
-        <button type="button" onClick={onDone} className={buttonClass}>Cancel</button>
+        <button type="button" onClick={onDone} disabled={remove.isPending} className={buttonClass}>Cancel</button>
       </div>
     </form>
   )
