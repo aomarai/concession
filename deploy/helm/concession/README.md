@@ -7,6 +7,8 @@ Deploys the API and the frontend (nginx, which serves the SPA and proxies `/api`
 ```sh
 helm install concession deploy/helm/concession \
   --set host=concession.example.com \
+  --set backend.image.repository=REGISTRY/concession-backend --set backend.image.tag=TAG \
+  --set frontend.image.repository=REGISTRY/concession-frontend --set frontend.image.tag=TAG \
   --set database.host=my-postgres.example.com \
   --set secrets.dbPassword=... \
   --set secrets.googleClientId=... --set secrets.googleClientSecret=... \
