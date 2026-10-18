@@ -2,6 +2,9 @@ import { ApiError, request } from './client'
 import type { FriendEntry, FriendRequests, Invite, NotificationPage, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressEntry, ProgressInput, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
 
 export const getMe = () => request<User>('/me')
+export const updateMe = (body: { display_name?: string; username?: string }) =>
+  request<User>('/me', { method: 'PATCH', body })
+export const deleteMe = (confirm: string) => request<void>('/me', { method: 'DELETE', body: { confirm } })
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
 export const search = (q: string, page = 1) =>
