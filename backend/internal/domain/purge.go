@@ -2,10 +2,12 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PurgeUser permanently deletes a user and everything that is theirs, in one
@@ -21,53 +23,56 @@ import (
 //     list's owner, so a list does not lose entries when a member leaves.
 //
 // Every table with a foreign key to users has to be cleared first; Postgres
-// enforces them (see TestPurgeUserOnPostgres). Purging an unknown user is a
-// no-op.
+// enforces them (see TestPurgeUserOnPostgres). The user row is locked first, so
+// a write that was already in flight (it references the user) finishes before
+// the purge looks at that table instead of slipping in just before the final
+// delete and failing it. Purging an unknown user is a no-op.
 func PurgeUser(ctx context.Context, db *gorm.DB, userID uuid.UUID) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var owned []uuid.UUID
-		if err := tx.Unscoped().Model(&Watchlist{}).Where("owner_id = ?", userID).Pluck("id", &owned).Error; err != nil {
-			return fmt.Errorf("purge user: find owned lists: %w", err)
-		}
 		// A fresh handle per step: a reused gorm.DB keeps the previous step's
 		// conditions and would mix them into the next statement.
 		hard := func() *gorm.DB { return tx.Unscoped() }
-		type step struct {
+
+		var locked User
+		err := hard().Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", userID).First(&locked).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("purge user: lock user: %w", err)
+		}
+
+		// A subquery rather than a list of IDs: a user with very many lists
+		// would otherwise exceed the database's bind-parameter limit.
+		const ownedLists = "(SELECT id FROM watchlists WHERE owner_id = ?)"
+		steps := []struct {
 			name string
 			run  func() error
-		}
-		var steps []step
-		if len(owned) > 0 { // `IN ()` is not valid everywhere, and there would be nothing to delete
-			steps = append(steps,
-				step{"items on owned lists", func() error {
-					return hard().Where("watchlist_id IN ?", owned).Delete(&WatchlistItem{}).Error
-				}},
-				step{"members of owned lists", func() error {
-					return hard().Where("watchlist_id IN ?", owned).Delete(&Collaborator{}).Error
-				}},
-				step{"owned lists", func() error {
-					return hard().Where("id IN ?", owned).Delete(&Watchlist{}).Error
-				}},
-			)
-		}
-		steps = append(steps,
-			step{"items added to other lists", func() error {
+		}{
+			{"items on owned lists", func() error {
+				return hard().Where("watchlist_id IN "+ownedLists, userID).Delete(&WatchlistItem{}).Error
+			}},
+			{"members of owned lists", func() error {
+				return hard().Where("watchlist_id IN "+ownedLists, userID).Delete(&Collaborator{}).Error
+			}},
+			{"owned lists", func() error { return hard().Where("owner_id = ?", userID).Delete(&Watchlist{}).Error }},
+			{"items added to other lists", func() error {
 				return hard().Model(&WatchlistItem{}).Where("added_by_id = ?", userID).
 					Update("added_by_id", gorm.Expr("(SELECT owner_id FROM watchlists WHERE watchlists.id = watchlist_items.watchlist_id)")).Error
 			}},
-			step{"memberships", func() error { return hard().Where("user_id = ?", userID).Delete(&Collaborator{}).Error }},
-			step{"reviews", func() error { return hard().Where("user_id = ?", userID).Delete(&Review{}).Error }},
-			step{"watch progress", func() error { return hard().Where("user_id = ?", userID).Delete(&UserWatchProgress{}).Error }},
-			step{"friendships", func() error {
+			{"memberships", func() error { return hard().Where("user_id = ?", userID).Delete(&Collaborator{}).Error }},
+			{"reviews", func() error { return hard().Where("user_id = ?", userID).Delete(&Review{}).Error }},
+			{"watch progress", func() error { return hard().Where("user_id = ?", userID).Delete(&UserWatchProgress{}).Error }},
+			{"friendships", func() error {
 				return hard().Where("user_a_id = ? OR user_b_id = ?", userID, userID).Delete(&Friendship{}).Error
 			}},
-			step{"notifications", func() error {
+			{"notifications", func() error {
 				return hard().Where("user_id = ? OR actor_id = ?", userID, userID).Delete(&Notification{}).Error
 			}},
-			step{"sessions", func() error { return hard().Where("user_id = ?", userID).Delete(&Session{}).Error }},
-			step{"oauth accounts", func() error { return hard().Where("user_id = ?", userID).Delete(&OAuthAccount{}).Error }},
-			step{"user", func() error { return hard().Where("id = ?", userID).Delete(&User{}).Error }},
-		)
+			{"sessions", func() error { return hard().Where("user_id = ?", userID).Delete(&Session{}).Error }},
+			{"oauth accounts", func() error { return hard().Where("user_id = ?", userID).Delete(&OAuthAccount{}).Error }},
+			{"user", func() error { return hard().Where("id = ?", userID).Delete(&User{}).Error }},
+		}
 		for _, s := range steps {
 			if err := s.run(); err != nil {
 				return fmt.Errorf("purge user: %s: %w", s.name, err)

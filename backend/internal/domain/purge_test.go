@@ -198,7 +198,7 @@ func TestPurgeUserFreesTheEmailAndUsername(t *testing.T) {
 
 func TestPurgeUserIsAllOrNothing(t *testing.T) {
 	steps := []struct{ op, table string }{
-		{"query", "watchlists"}, {"delete", "watchlist_items"}, {"delete", "collaborators"},
+		{"query", "users"}, {"delete", "watchlist_items"}, {"delete", "collaborators"},
 		{"delete", "watchlists"}, {"update", "watchlist_items"}, {"delete", "reviews"},
 		{"delete", "user_watch_progresses"}, {"delete", "friendships"}, {"delete", "notifications"},
 		{"delete", "sessions"}, {"delete", "o_auth_accounts"}, {"delete", "users"},
@@ -217,19 +217,18 @@ func TestPurgeUserIsAllOrNothing(t *testing.T) {
 			}
 			// The transaction rolled back: nothing of a's is gone.
 			checks := []struct {
+				table string
 				model any
 				query string
 			}{
-				{&User{}, "id = ?"}, {&Session{}, "user_id = ?"}, {&OAuthAccount{}, "user_id = ?"},
-				{&Notification{}, "actor_id = ?"}, {&Collaborator{}, "user_id = ?"},
-			}
-			if step.op != "query" { // the injected failure would break this very check
-				checks = append(checks, struct {
-					model any
-					query string
-				}{&Watchlist{}, "owner_id = ?"})
+				{"users", &User{}, "id = ?"}, {"sessions", &Session{}, "user_id = ?"},
+				{"o_auth_accounts", &OAuthAccount{}, "user_id = ?"}, {"notifications", &Notification{}, "actor_id = ?"},
+				{"collaborators", &Collaborator{}, "user_id = ?"}, {"watchlists", &Watchlist{}, "owner_id = ?"},
 			}
 			for _, c := range checks {
+				if step.op == "query" && c.table == step.table {
+					continue // the injected failure would break this very check
+				}
 				if n := unscopedCount(t, db, c.model, c.query, s.a.ID); n == 0 {
 					t.Errorf("%T was partly deleted despite the failure", c.model)
 				}
@@ -238,15 +237,15 @@ func TestPurgeUserIsAllOrNothing(t *testing.T) {
 	}
 }
 
-// TestPurgeUserOnPostgres runs the same scenario on a real Postgres, where the
-// foreign keys are enforced (SQLite tests create none). It is skipped unless
-// TEST_POSTGRES_DSN is set; CI provides a Postgres service for it.
-func TestPurgeUserOnPostgres(t *testing.T) {
+// postgresSchema opens a private schema on the Postgres named by
+// TEST_POSTGRES_DSN, with the real foreign keys, or skips the test. The schema
+// is dropped afterwards, so it is safe to point at a shared database.
+func postgresSchema(t *testing.T) *gorm.DB {
+	t.Helper()
 	dsn := os.Getenv("TEST_POSTGRES_DSN")
 	if dsn == "" {
 		t.Skip("TEST_POSTGRES_DSN is not set")
 	}
-	// A private schema keeps runs apart and leaves the database clean.
 	schema := "purge_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Discard})
 	must(t, err)
@@ -265,8 +264,62 @@ func TestPurgeUserOnPostgres(t *testing.T) {
 		}
 	})
 	must(t, db.AutoMigrate(allModels()...)) // with the real foreign keys
+	return db
+}
 
+// TestPurgeUserOnPostgres runs the full scenario on a real Postgres, where the
+// foreign keys are enforced (SQLite tests create none). It is skipped unless
+// TEST_POSTGRES_DSN is set; CI provides a Postgres service for it.
+func TestPurgeUserOnPostgres(t *testing.T) {
+	db := postgresSchema(t)
 	s := seedPurgeScenario(t, db)
 	must(t, PurgeUser(context.Background(), db, s.a.ID))
+	assertPurged(t, db, s)
+}
+
+// TestPurgeUserWaitsForInFlightWrites: a request that was already authenticated
+// can still be writing a row that points at the user when deletion starts.
+// Without the lock on the user row, the purge would clear that table, then
+// fail at the final delete once the write commits (a foreign-key violation).
+func TestPurgeUserWaitsForInFlightWrites(t *testing.T) {
+	db := postgresSchema(t)
+	s := seedPurgeScenario(t, db)
+
+	inFlight := db.Begin()
+	must(t, inFlight.Error)
+	must(t, inFlight.Create(&Notification{UserID: s.b.ID, ActorID: s.a.ID, Type: NotificationItemAdded, Message: "late"}).Error)
+
+	done := make(chan error, 1)
+	go func() { done <- PurgeUser(context.Background(), db, s.a.ID) }()
+
+	select {
+	case err := <-done:
+		_ = inFlight.Rollback()
+		t.Fatalf("the purge finished (%v) while a write to the user was still in flight; it must wait", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	must(t, inFlight.Commit().Error)
+	select {
+	case err := <-done:
+		must(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the purge never finished after the write committed")
+	}
+	assertPurged(t, db, s) // including the notification that arrived mid-purge
+}
+
+// A user with more lists than Postgres allows bind parameters in one statement
+// (65,535) must still be deletable.
+func TestPurgeUserWithVeryManyLists(t *testing.T) {
+	db := postgresSchema(t)
+	s := seedPurgeScenario(t, db)
+	must(t, db.Exec(`INSERT INTO watchlists (id, owner_id, title, type, privacy, share_token, created_at, updated_at)
+		SELECT gen_random_uuid(), ?, 'bulk', 'movie', 'private', md5(random()::text || g::text), now(), now()
+		FROM generate_series(1, 70000) g`, s.a.ID).Error)
+
+	must(t, PurgeUser(context.Background(), db, s.a.ID))
+	if n := unscopedCount(t, db, &Watchlist{}, "owner_id = ?", s.a.ID); n != 0 {
+		t.Errorf("%d lists remain", n)
+	}
 	assertPurged(t, db, s)
 }
