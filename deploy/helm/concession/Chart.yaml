@@ -1,0 +1,6 @@
+apiVersion: v2
+name: concession
+description: Collaborative movie and TV watchlists (Go API + React frontend)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

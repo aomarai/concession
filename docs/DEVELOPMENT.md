@@ -124,3 +124,7 @@ Sign in with Google through the backend (`/api/v1/auth/google/login`); because t
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and push to `main`: gofmt check, `go vet`, tests with race detector and the coverage gate; plus the frontend lint/build/test job once `frontend/package.json` exists.
+
+## Kubernetes
+
+`deploy/helm/concession` is a Helm chart for the API and the frontend (see its README for values and an example install). Postgres is not bundled. The chart was written without a Helm binary, so it has not been linted or rendered; run `helm lint` and `helm template` before relying on it.
