@@ -11,6 +11,8 @@ afterEach(() => vi.mocked(request).mockClear())
 describe('endpoints', () => {
   it.each([
     ['me', () => api.getMe(), ['/me']],
+    ['update profile', () => api.updateMe({ display_name: 'Ada' }), ['/me', { method: 'PATCH', body: { display_name: 'Ada' } }]],
+    ['delete account', () => api.deleteMe('ada'), ['/me', { method: 'DELETE', body: { confirm: 'ada' } }]],
     ['logout', () => api.logout(), ['/auth/logout', { method: 'POST' }]],
     ['search', () => api.search('the matrix & co', 2), ['/search?q=the%20matrix%20%26%20co&page=2']],
     ['lists', () => api.listWatchlists(), ['/watchlists']],

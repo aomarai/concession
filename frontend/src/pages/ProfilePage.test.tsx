@@ -48,6 +48,96 @@ describe('ProfilePage account', () => {
   })
 })
 
+describe('ProfilePage editing', () => {
+  const open = async () => {
+    renderWithProviders(<ProfilePage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit profile' }))
+  }
+
+  it('saves only the fields that changed and shows the result', async () => {
+    vi.mocked(api.updateMe).mockResolvedValue({ id: 'u1', username: 'ada', display_name: 'Ada Lovelace', avatar_url: '' })
+    await open()
+    expect(screen.getByLabelText('Display name')).toHaveValue('Ada L')
+    expect(screen.getByLabelText('Username')).toHaveValue('ada')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    await userEvent.clear(screen.getByLabelText('Display name'))
+    await userEvent.type(screen.getByLabelText('Display name'), 'Ada Lovelace')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.updateMe).toHaveBeenCalledWith({ display_name: 'Ada Lovelace' })
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Display name')).not.toBeInTheDocument()
+  })
+
+  it('can change the username', async () => {
+    vi.mocked(api.updateMe).mockResolvedValue({ id: 'u1', username: 'countess', display_name: 'Ada L', avatar_url: '' })
+    await open()
+    await userEvent.clear(screen.getByLabelText('Username'))
+    await userEvent.type(screen.getByLabelText('Username'), 'countess')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.updateMe).toHaveBeenCalledWith({ username: 'countess' })
+    expect(await screen.findByText('@countess')).toBeInTheDocument()
+  })
+
+  it('shows why a save failed and keeps the form open', async () => {
+    vi.mocked(api.updateMe).mockRejectedValue(new ApiError(409, 'conflict', 'That username is already taken'))
+    await open()
+    await userEvent.type(screen.getByLabelText('Username'), 'x')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('That username is already taken')).toBeInTheDocument()
+    expect(screen.getByLabelText('Username')).toBeInTheDocument()
+  })
+
+  it('cancels without saving', async () => {
+    await open()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('Display name')).not.toBeInTheDocument()
+    expect(api.updateMe).not.toHaveBeenCalled()
+  })
+})
+
+describe('ProfilePage account deletion', () => {
+  const open = async () => {
+    const view = renderWithProviders(<ProfilePage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete account' }))
+    return view
+  }
+
+  it('needs the username typed before it will delete', async () => {
+    await open()
+    const confirm = screen.getByRole('button', { name: 'Permanently delete' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/type your username/i), 'ad')
+    expect(confirm).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/type your username/i), 'A')
+    expect(confirm).toBeEnabled()
+  })
+
+  it('accepts the e-mail address too, then signs out', async () => {
+    vi.mocked(api.deleteMe).mockResolvedValue(undefined)
+    const { client } = await open()
+    const reset = vi.spyOn(client, 'resetQueries')
+    await userEvent.type(screen.getByLabelText(/type your username/i), 'ADA@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Permanently delete' }))
+    expect(api.deleteMe).toHaveBeenCalledWith('ADA@example.com')
+    await vi.waitFor(() => expect(reset).toHaveBeenCalled())
+  })
+
+  it('shows why deleting failed', async () => {
+    vi.mocked(api.deleteMe).mockRejectedValue(new ApiError(500, 'internal_error', 'delete broke'))
+    await open()
+    await userEvent.type(screen.getByLabelText(/type your username/i), 'ada')
+    await userEvent.click(screen.getByRole('button', { name: 'Permanently delete' }))
+    expect(await screen.findByText('delete broke')).toBeInTheDocument()
+  })
+
+  it('can be cancelled', async () => {
+    await open()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText(/type your username/i)).not.toBeInTheDocument()
+    expect(api.deleteMe).not.toHaveBeenCalled()
+  })
+})
+
 describe('ProfilePage tracked titles', () => {
   it('groups titles by status with links and show progress', async () => {
     vi.mocked(api.listMyProgress).mockResolvedValue({

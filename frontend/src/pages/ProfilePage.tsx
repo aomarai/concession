@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getMe, listMyProgress, listMyReviews } from '../api/endpoints'
-import type { ProgressEntry, WatchStatus } from '../api/types'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { deleteMe, getMe, listMyProgress, listMyReviews, updateMe } from '../api/endpoints'
+import type { ProgressEntry, User, WatchStatus } from '../api/types'
 import Alert from '../components/Alert'
 import TitleLink from '../components/TitleLink'
 import { errorMessage } from '../lib/format'
@@ -19,20 +19,110 @@ function position(e: ProgressEntry): string | undefined {
     : undefined
 }
 
+const inputClass = 'rounded bg-zinc-900 px-2 py-1'
+const buttonClass = 'rounded bg-zinc-800 px-3 py-1 text-sm disabled:opacity-50'
+
+function EditProfile({ user, onDone }: { user: User; onDone: () => void }) {
+  const qc = useQueryClient()
+  const [displayName, setDisplayName] = useState(user.display_name)
+  const [username, setUsername] = useState(user.username)
+  // Only send what changed: a legacy username (the Google e-mail) is not valid
+  // to send back unchanged.
+  const changes: { display_name?: string; username?: string } = {}
+  if (displayName !== user.display_name) changes.display_name = displayName
+  if (username !== user.username) changes.username = username
+  const save = useMutation({
+    mutationFn: () => updateMe(changes),
+    onSuccess: (updated) => {
+      qc.setQueryData(['me'], updated)
+      onDone()
+    },
+  })
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault()
+        save.mutate()
+      }}
+    >
+      <label className="block text-sm">
+        Display name
+        <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={`${inputClass} mt-1 block`} />
+      </label>
+      <label className="block text-sm">
+        Username
+        <input value={username} onChange={(e) => setUsername(e.target.value)} className={`${inputClass} mt-1 block`} />
+      </label>
+      {save.isError && <Alert message={errorMessage(save.error)} />}
+      <div className="flex gap-2">
+        <button type="submit" disabled={Object.keys(changes).length === 0 || save.isPending} className={buttonClass}>Save</button>
+        <button type="button" onClick={onDone} className={buttonClass}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+function DeleteAccount({ user, onDone }: { user: User; onDone: () => void }) {
+  const qc = useQueryClient()
+  const [typed, setTyped] = useState('')
+  const remove = useMutation({
+    mutationFn: () => deleteMe(typed),
+    // The session is gone: refetching "me" now yields 401, which shows the sign-in page.
+    onSuccess: () => qc.resetQueries(),
+  })
+  const t = typed.trim().toLowerCase()
+  const matches = t !== '' && (t === user.username.toLowerCase() || t === user.email?.toLowerCase())
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault()
+        remove.mutate()
+      }}
+    >
+      <p className="text-sm text-zinc-300">
+        This permanently deletes your account, your lists, reviews, watch progress and friendships. It cannot be undone.
+      </p>
+      <label className="block text-sm">
+        Type your username or e-mail to confirm
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} className={`${inputClass} mt-1 block`} />
+      </label>
+      {remove.isError && <Alert message={errorMessage(remove.error)} />}
+      <div className="flex gap-2">
+        <button type="submit" disabled={!matches || remove.isPending} className="rounded bg-red-700 px-3 py-1 text-sm disabled:opacity-50">Permanently delete</button>
+        <button type="button" onClick={onDone} className={buttonClass}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
 function Account() {
   const me = useQuery({ queryKey: ['me'], queryFn: getMe })
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
   if (me.isError) return <Alert message={errorMessage(me.error)} />
   if (!me.data) return <p className="text-zinc-400">Loading…</p>
   const u = me.data
+  const done = () => setMode('view')
   return (
-    <header className="flex items-center gap-4">
-      {u.avatar_url && <img src={u.avatar_url} alt={u.display_name} className="h-16 w-16 rounded-full object-cover" />}
-      <div>
-        <h1 className="text-2xl font-semibold">{u.display_name}</h1>
-        <p className="text-zinc-400">@{u.username}</p>
-        {u.email && <p className="text-sm text-zinc-500">{u.email}</p>}
-      </div>
-    </header>
+    <div className="space-y-4">
+      <header className="flex items-center gap-4">
+        {u.avatar_url && <img src={u.avatar_url} alt={u.display_name} className="h-16 w-16 rounded-full object-cover" />}
+        <div>
+          <h1 className="text-2xl font-semibold">{u.display_name}</h1>
+          <p className="text-zinc-400">@{u.username}</p>
+          {u.email && <p className="text-sm text-zinc-500">{u.email}</p>}
+        </div>
+      </header>
+      {mode === 'edit' && <EditProfile user={u} onDone={done} />}
+      {mode === 'delete' && <DeleteAccount user={u} onDone={done} />}
+      {mode === 'view' && (
+        <div className="flex gap-2">
+          <button onClick={() => setMode('edit')} className={buttonClass}>Edit profile</button>
+          <button onClick={() => setMode('delete')} className={`${buttonClass} text-red-400`}>Delete account</button>
+        </div>
+      )}
+    </div>
   )
 }
 
