@@ -46,10 +46,14 @@ func TestWatchlistLifecycle(t *testing.T) {
 	if len(got.Watchlists) != 1 || got.Watchlists[0].ID != l.ID || got.Total != 1 || got.Page != 1 || got.PerPage != 20 {
 		t.Errorf("list: %+v", got)
 	}
-	a.createList(owner, "show")
+	newer := a.createList(owner, "show")
+	first := decode[listBody](t, a.do(owner, http.MethodGet, "/watchlists?page=1&per_page=1", nil))
+	if len(first.Watchlists) != 1 || first.Watchlists[0].ID != newer.ID {
+		t.Errorf("first page should hold the newest list: %+v", first)
+	}
 	second := decode[listBody](t, a.do(owner, http.MethodGet, "/watchlists?page=2&per_page=1", nil))
-	if len(second.Watchlists) != 1 || second.Total != 2 || second.Page != 2 || second.PerPage != 1 {
-		t.Errorf("second page: %+v", second)
+	if len(second.Watchlists) != 1 || second.Watchlists[0].ID != l.ID || second.Total != 2 || second.Page != 2 || second.PerPage != 1 {
+		t.Errorf("second page should hold the older list: %+v", second)
 	}
 	a.expect(a.do(owner, http.MethodGet, "/watchlists?page=abc", nil), http.StatusBadRequest, "bad_request")
 	a.expect(a.do(owner, http.MethodGet, "/watchlists?per_page=-1", nil), http.StatusBadRequest, "bad_request")
