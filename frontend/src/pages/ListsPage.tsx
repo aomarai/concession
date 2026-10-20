@@ -6,11 +6,13 @@ import type { ListType } from '../api/types'
 import Alert from '../components/Alert'
 import Pager from '../components/Pager'
 import { errorMessage } from '../lib/format'
+import { useClampPage } from '../lib/useClampPage'
 
 export default function ListsPage() {
   const qc = useQueryClient()
   const [page, setPage] = useState(1)
   const lists = useQuery({ queryKey: ['watchlists', page], queryFn: () => listWatchlists(page), placeholderData: keepPreviousData })
+  useClampPage(page, lists.data?.total, lists.data?.per_page, setPage)
   const [title, setTitle] = useState('')
   const [type, setType] = useState<ListType>('movie')
   const create = useMutation({

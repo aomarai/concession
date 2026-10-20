@@ -6,6 +6,7 @@ import Alert from '../components/Alert'
 import Pager from '../components/Pager'
 import TitleLink from '../components/TitleLink'
 import { errorMessage } from '../lib/format'
+import { useClampPage } from '../lib/useClampPage'
 
 function position(e: ProgressEntry): string | undefined {
   return e.item_type === 'show' && (e.last_season_num > 0 || e.last_episode_num > 0)
@@ -138,6 +139,7 @@ function Tracked() {
     queryFn: () => listMyProgress(page, status),
     placeholderData: keepPreviousData,
   })
+  useClampPage(page, progress.data?.total, progress.data?.per_page, setPage)
   const choose = (s?: WatchStatus) => {
     setStatus(s)
     setPage(1)
@@ -190,6 +192,7 @@ function Tracked() {
 function MyReviews() {
   const [page, setPage] = useState(1)
   const reviews = useQuery({ queryKey: ['my-reviews', page], queryFn: () => listMyReviews(page) })
+  useClampPage(page, reviews.data?.total, reviews.data?.per_page, setPage)
   if (reviews.isError) return <Alert message={errorMessage(reviews.error)} />
   if (!reviews.data) return <p className="text-zinc-400">Loading…</p>
   const { data } = reviews

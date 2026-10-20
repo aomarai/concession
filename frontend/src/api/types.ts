@@ -199,9 +199,19 @@ export interface FriendEntry {
   created_at: string
 }
 
+export interface FriendPage {
+  friends: FriendEntry[]
+  page: number
+  per_page: number
+  total: number
+}
+
 export interface FriendRequests {
   incoming: FriendEntry[]
   outgoing: FriendEntry[]
+  page: number
+  per_page: number
+  total: number
 }
 
 export interface ProgressEntry extends Progress {

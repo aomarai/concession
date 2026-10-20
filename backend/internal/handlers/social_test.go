@@ -14,6 +14,9 @@ import (
 
 type friendsBody struct {
 	Friends []friends.Entry `json:"friends"`
+	Page    int             `json:"page"`
+	PerPage int             `json:"per_page"`
+	Total   int64           `json:"total"`
 }
 
 func (a *api) befriend(from, to uuid.UUID, toName string) {
@@ -227,5 +230,34 @@ func TestSocialRoutesNeedAnAuthenticatedUser(t *testing.T) {
 		{http.MethodPost, "/friends/requests/" + id + "/decline"},
 	} {
 		a.expect(a.do(uuid.Nil, tc.method, tc.path, nil), http.StatusInternalServerError, "internal_error")
+	}
+}
+
+func TestFriendListsArePaged(t *testing.T) {
+	a := newAPI(t)
+	me := a.newUser("me")
+	for _, name := range []string{"ann", "bob"} {
+		a.befriend(me, a.newUser(name), name)
+	}
+	// Two more people have asked me; I have asked nobody.
+	for _, name := range []string{"cy", "di"} {
+		a.expect(a.do(a.newUser(name), http.MethodPost, "/friends", map[string]any{"user": "me"}), http.StatusCreated, "")
+	}
+
+	all := decode[friendsBody](t, a.do(me, http.MethodGet, "/friends", nil))
+	if len(all.Friends) != 2 || all.Total != 2 || all.Page != 1 || all.PerPage != 20 {
+		t.Errorf("friends: %+v", all)
+	}
+	second := decode[friendsBody](t, a.do(me, http.MethodGet, "/friends?page=2&per_page=1", nil))
+	if len(second.Friends) != 1 || second.Friends[0].ID == all.Friends[0].ID || second.Total != 2 || second.Page != 2 || second.PerPage != 1 {
+		t.Errorf("second page of friends should be the other friend: %+v vs %+v", second, all)
+	}
+	reqs := decode[friends.Requests](t, a.do(me, http.MethodGet, "/friends/requests?page=2&per_page=1", nil))
+	if len(reqs.Incoming) != 1 || reqs.Total != 2 || reqs.Page != 2 || reqs.PerPage != 1 {
+		t.Errorf("second page of requests: %+v", reqs)
+	}
+	for _, path := range []string{"/friends", "/friends/requests"} {
+		a.expect(a.do(me, http.MethodGet, path+"?page=abc", nil), http.StatusBadRequest, "bad_request")
+		a.expect(a.do(me, http.MethodGet, path+"?per_page=-1", nil), http.StatusBadRequest, "bad_request")
 	}
 }

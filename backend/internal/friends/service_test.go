@@ -3,6 +3,7 @@ package friends
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -51,6 +52,15 @@ func newEnv(t *testing.T) *env {
 	return &env{svc: s, db: db, rec: rec}
 }
 
+// friendsOf is the first page of who's friends.
+func (e *env) friendsOf(who uuid.UUID) ([]Entry, error) {
+	p, err := e.svc.List(ctx, who, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	return p.Friends, nil
+}
+
 func (e *env) user(t *testing.T, name string) uuid.UUID {
 	t.Helper()
 	u := domain.User{Username: name, Email: name + "@example.com", DisplayName: strings.ToUpper(name[:1]) + name[1:]}
@@ -77,15 +87,15 @@ func TestSendAndAcceptFlow(t *testing.T) {
 		t.Errorf("notifications: %+v", e.rec.got)
 	}
 
-	reqs, _ := e.svc.ListRequests(ctx, bob)
+	reqs, _ := e.svc.ListRequests(ctx, bob, 0, 0)
 	if len(reqs.Incoming) != 1 || len(reqs.Outgoing) != 0 || reqs.Incoming[0].User.ID != ann {
 		t.Fatalf("bob's requests: %+v", reqs)
 	}
-	reqs, _ = e.svc.ListRequests(ctx, ann)
+	reqs, _ = e.svc.ListRequests(ctx, ann, 0, 0)
 	if len(reqs.Outgoing) != 1 || len(reqs.Incoming) != 0 || reqs.Outgoing[0].User.ID != bob {
 		t.Errorf("ann's requests: %+v", reqs)
 	}
-	if friends, _ := e.svc.List(ctx, ann); len(friends) != 0 {
+	if friends, _ := e.friendsOf(ann); len(friends) != 0 {
 		t.Errorf("a pending request is not a friendship: %+v", friends)
 	}
 
@@ -104,7 +114,7 @@ func TestSendAndAcceptFlow(t *testing.T) {
 		t.Errorf("accept notification: %+v", last)
 	}
 	for _, me := range []uuid.UUID{ann, bob} {
-		friends, err := e.svc.List(ctx, me)
+		friends, err := e.friendsOf(me)
 		if err != nil || len(friends) != 1 || friends[0].Status != domain.FriendshipAccepted || friends[0].AcceptedAt == nil {
 			t.Errorf("friends of %v: %+v, %v", me, friends, err)
 		}
@@ -136,7 +146,7 @@ func TestSendValidation(t *testing.T) {
 	if _, err := e.svc.Send(ctx, ann, byName("bob")); !errors.Is(err, svcerr.ErrDuplicate) || !strings.Contains(svcerr.MessageOr(err, ""), "already sent") {
 		t.Errorf("sending twice: %v", err)
 	}
-	reqs, _ := e.svc.ListRequests(ctx, ann)
+	reqs, _ := e.svc.ListRequests(ctx, ann, 0, 0)
 	if err := e.svc.Accept(ctx, bob, reqs.Outgoing[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +232,7 @@ func TestDeclineRemoveAndCancel(t *testing.T) {
 
 	// Decline.
 	e.svc.Send(ctx, ann, byName("bob"))
-	reqs, _ := e.svc.ListRequests(ctx, bob)
+	reqs, _ := e.svc.ListRequests(ctx, bob, 0, 0)
 	id := reqs.Incoming[0].ID
 	if err := e.svc.Decline(ctx, ann, id); !errors.Is(err, svcerr.ErrNotFound) {
 		t.Errorf("sender declining: %v", err)
@@ -242,7 +252,7 @@ func TestDeclineRemoveAndCancel(t *testing.T) {
 	if err := e.svc.Remove(ctx, ann, bob); err != nil {
 		t.Errorf("cancel: %v", err)
 	}
-	if reqs, _ := e.svc.ListRequests(ctx, bob); len(reqs.Incoming) != 0 {
+	if reqs, _ := e.svc.ListRequests(ctx, bob, 0, 0); len(reqs.Incoming) != 0 {
 		t.Errorf("cancelled request lingers: %+v", reqs)
 	}
 	if err := e.svc.Remove(ctx, ann, bob); !errors.Is(err, svcerr.ErrNotFound) {
@@ -252,7 +262,7 @@ func TestDeclineRemoveAndCancel(t *testing.T) {
 	// Unfriend, from either side.
 	for _, unfriender := range []uuid.UUID{ann, bob} {
 		e.svc.Send(ctx, ann, byName("bob"))
-		reqs, _ := e.svc.ListRequests(ctx, bob)
+		reqs, _ := e.svc.ListRequests(ctx, bob, 0, 0)
 		e.svc.Accept(ctx, bob, reqs.Incoming[0].ID)
 		other := bob
 		if unfriender == bob {
@@ -261,7 +271,7 @@ func TestDeclineRemoveAndCancel(t *testing.T) {
 		if err := e.svc.Remove(ctx, unfriender, other); err != nil {
 			t.Fatal(err)
 		}
-		if friends, _ := e.svc.List(ctx, ann); len(friends) != 0 {
+		if friends, _ := e.friendsOf(ann); len(friends) != 0 {
 			t.Errorf("still friends after unfriending: %+v", friends)
 		}
 	}
@@ -276,13 +286,13 @@ func TestListOrderAndDeletedAccounts(t *testing.T) {
 	for _, n := range []string{"bob", "cy"} {
 		other := e.user(t, n)
 		e.svc.Send(ctx, ann, byName(n))
-		reqs, _ := e.svc.ListRequests(ctx, other)
+		reqs, _ := e.svc.ListRequests(ctx, other, 0, 0)
 		if err := e.svc.Accept(ctx, other, reqs.Incoming[0].ID); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(3 * time.Millisecond)
 	}
-	friends, err := e.svc.List(ctx, ann)
+	friends, err := e.friendsOf(ann)
 	if err != nil || len(friends) != 2 || friends[0].User.DisplayName != "Cy" || friends[1].User.DisplayName != "Bob" {
 		t.Fatalf("most recent first: %+v, %v", friends, err)
 	}
@@ -290,7 +300,7 @@ func TestListOrderAndDeletedAccounts(t *testing.T) {
 	var cy domain.User
 	e.db.Where("username = ?", "cy").First(&cy)
 	e.db.Unscoped().Delete(&domain.User{}, cy.ID)
-	friends, _ = e.svc.List(ctx, ann)
+	friends, _ = e.friendsOf(ann)
 	if len(friends) != 2 || friends[0].User.ID != cy.ID || friends[0].User.DisplayName != "" {
 		t.Errorf("deleted friend: %+v", friends)
 	}
@@ -303,7 +313,7 @@ func TestNotificationFailuresDoNotFailTheAction(t *testing.T) {
 	if _, err := e.svc.Send(ctx, ann, byName("bob")); err != nil {
 		t.Errorf("send: %v", err)
 	}
-	reqs, _ := e.svc.ListRequests(ctx, bob)
+	reqs, _ := e.svc.ListRequests(ctx, bob, 0, 0)
 	if err := e.svc.Accept(ctx, bob, reqs.Incoming[0].ID); err != nil {
 		t.Errorf("accept: %v", err)
 	}
@@ -315,7 +325,7 @@ func TestNotificationFailuresDoNotFailTheAction(t *testing.T) {
 	if _, err := e2.svc.Send(ctx, a, byName("bob")); err != nil {
 		t.Errorf("no notifier: %v", err)
 	}
-	reqs, _ = e2.svc.ListRequests(ctx, b)
+	reqs, _ = e2.svc.ListRequests(ctx, b, 0, 0)
 	if err := e2.svc.Accept(ctx, b, reqs.Incoming[0].ID); err != nil {
 		t.Errorf("no notifier: %v", err)
 	}
@@ -326,7 +336,7 @@ func TestDatabaseFailures(t *testing.T) {
 	pending := func(e *env, ann, bob uuid.UUID) { e.svc.Send(ctx, ann, byName("bob")) }
 	accepted := func(e *env, ann, bob uuid.UUID) {
 		e.svc.Send(ctx, ann, byName("bob"))
-		reqs, _ := e.svc.ListRequests(ctx, bob)
+		reqs, _ := e.svc.ListRequests(ctx, bob, 0, 0)
 		e.svc.Accept(ctx, bob, reqs.Incoming[0].ID)
 	}
 	requestID := func(e *env, bob uuid.UUID) uuid.UUID {
@@ -350,10 +360,10 @@ func TestDatabaseFailures(t *testing.T) {
 		{"accept: update", "update", "friendships", 0, pending, func(e *env, a, b uuid.UUID) error { return e.svc.Accept(ctx, b, requestID(e, b)) }},
 		{"decline: delete", "delete", "friendships", 0, pending, func(e *env, a, b uuid.UUID) error { return e.svc.Decline(ctx, b, requestID(e, b)) }},
 		{"remove", "delete", "friendships", 0, accepted, func(e *env, a, b uuid.UUID) error { return e.svc.Remove(ctx, a, b) }},
-		{"list: rows", "query", "friendships", 0, accepted, func(e *env, a, b uuid.UUID) error { _, err := e.svc.List(ctx, a); return err }},
-		{"list: profiles", "query", "users", 0, accepted, func(e *env, a, b uuid.UUID) error { _, err := e.svc.List(ctx, a); return err }},
-		{"requests: rows", "query", "friendships", 0, pending, func(e *env, a, b uuid.UUID) error { _, err := e.svc.ListRequests(ctx, a); return err }},
-		{"requests: profiles", "query", "users", 0, pending, func(e *env, a, b uuid.UUID) error { _, err := e.svc.ListRequests(ctx, a); return err }},
+		{"list: rows", "query", "friendships", 0, accepted, func(e *env, a, b uuid.UUID) error { _, err := e.svc.List(ctx, a, 0, 0); return err }},
+		{"list: profiles", "query", "users", 0, accepted, func(e *env, a, b uuid.UUID) error { _, err := e.svc.List(ctx, a, 0, 0); return err }},
+		{"requests: rows", "query", "friendships", 0, pending, func(e *env, a, b uuid.UUID) error { _, err := e.svc.ListRequests(ctx, a, 0, 0); return err }},
+		{"requests: profiles", "query", "users", 0, pending, func(e *env, a, b uuid.UUID) error { _, err := e.svc.ListRequests(ctx, a, 0, 0); return err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEnv(t)
@@ -389,5 +399,121 @@ func TestSendToAccountDeletedMeanwhile(t *testing.T) {
 	e.db.Model(&domain.Friendship{}).Count(&n)
 	if n != 0 {
 		t.Errorf("%d friendships left", n)
+	}
+}
+
+func TestListPages(t *testing.T) {
+	e := newEnv(t)
+	me := e.user(t, "me")
+	var want []string
+	for _, name := range []string{"a1", "b2", "c3", "d4", "e5"} {
+		id := e.user(t, name)
+		if _, err := e.svc.Send(ctx, me, userref.Ref{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+		reqs, _ := e.svc.ListRequests(ctx, id, 0, 0)
+		if err := e.svc.Accept(ctx, id, reqs.Incoming[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		want = append([]string{strings.ToUpper(name[:1]) + name[1:]}, want...) // most recently befriended first
+		time.Sleep(2 * time.Millisecond)
+	}
+	var got []string
+	for page := 1; page <= 3; page++ {
+		p, err := e.svc.List(ctx, me, page, 2)
+		if err != nil || p.Total != 5 || p.Page != page || p.PerPage != 2 {
+			t.Fatalf("page %d: %+v, %v", page, p, err)
+		}
+		for _, f := range p.Friends {
+			got = append(got, f.User.DisplayName)
+		}
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("pages should walk friends without gaps or repeats: got %v want %v", got, want)
+	}
+	if p, err := e.svc.List(ctx, me, 9, 2); err != nil || p.Friends == nil || len(p.Friends) != 0 || p.Total != 5 {
+		t.Errorf("past the end: %+v, %v", p, err)
+	}
+	if _, err := e.svc.List(ctx, me, -1, 0); !errors.Is(err, svcerr.ErrInvalid) {
+		t.Errorf("negative page: %v", err)
+	}
+}
+
+func TestListRequestsPages(t *testing.T) {
+	e := newEnv(t)
+	me := e.user(t, "me")
+	var inWant, outWant []uuid.UUID
+	for i, name := range []string{"a1", "b2", "c3", "d4"} {
+		other := e.user(t, name)
+		from, to := me, other
+		if i%2 == 0 { // a1 and c3 asked me; I asked b2 and d4
+			from, to = other, me
+		}
+		if _, err := e.svc.Send(ctx, from, userref.Ref{ID: to}); err != nil {
+			t.Fatal(err)
+		}
+		if from == me {
+			outWant = append(outWant, other)
+		} else {
+			inWant = append(inWant, other)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	var in, out []uuid.UUID
+	for page := 1; page <= 2; page++ {
+		r, err := e.svc.ListRequests(ctx, me, page, 3)
+		if err != nil || r.Total != 4 || r.Page != page || r.PerPage != 3 {
+			t.Fatalf("page %d: %+v, %v", page, r, err)
+		}
+		for _, x := range r.Incoming {
+			in = append(in, x.User.ID)
+		}
+		for _, x := range r.Outgoing {
+			out = append(out, x.User.ID)
+		}
+	}
+	same := func(got, want []uuid.UUID) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		seen := map[uuid.UUID]bool{}
+		for _, id := range got {
+			seen[id] = true
+		}
+		for _, id := range want {
+			if !seen[id] {
+				return false
+			}
+		}
+		return true
+	}
+	if !same(in, inWant) || !same(out, outWant) {
+		t.Errorf("every pending request should appear exactly once, on the right side: in=%v/%v out=%v/%v", in, inWant, out, outWant)
+	}
+	if r, err := e.svc.ListRequests(ctx, me, 9, 3); err != nil || r.Incoming == nil || r.Outgoing == nil || len(r.Incoming)+len(r.Outgoing) != 0 || r.Total != 4 {
+		t.Errorf("past the end: %+v, %v", r, err)
+	}
+	if _, err := e.svc.ListRequests(ctx, me, -1, 0); !errors.Is(err, svcerr.ErrInvalid) {
+		t.Errorf("negative page: %v", err)
+	}
+}
+
+func TestListFailsReadingAPage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(e *env, who uuid.UUID) error
+	}{
+		{"friends", func(e *env, who uuid.UUID) error { _, err := e.svc.List(ctx, who, 0, 0); return err }},
+		{"requests", func(e *env, who uuid.UUID) error { _, err := e.svc.ListRequests(ctx, who, 0, 0); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			ann, bob := e.user(t, "ann"), e.user(t, "bob")
+			e.svc.Send(ctx, ann, userref.Ref{ID: bob})
+			testutil.FailAfter(t, e.db, "query", "friendships", 1) // the count succeeds, the page fails
+			if err := tc.call(e, ann); !errors.Is(err, testutil.ErrInjected) {
+				t.Errorf("got %v", err)
+			}
+		})
 	}
 }
