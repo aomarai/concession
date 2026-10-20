@@ -45,6 +45,7 @@ describe('SearchPage', () => {
     expect(await screen.findByText('The Matrix')).toBeInTheDocument()
     expect(screen.getByText('Breaking Bad')).toBeInTheDocument()
     expect(screen.getByText('1999')).toBeInTheDocument()
+    expect(screen.getAllByText('Movie').length).toBeGreaterThan(0)
     expect(screen.getByText('Neo')).toBeInTheDocument()
   })
 

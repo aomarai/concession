@@ -41,10 +41,11 @@ describe('ListPage', () => {
     expect(await screen.findByRole('heading', { name: 'Friday night' })).toBeInTheDocument()
     expect(screen.getByText('cozy')).toBeInTheDocument()
     expect(screen.getByText(/The Matrix/)).toBeInTheDocument()
-    expect(screen.getByText('(1999)')).toBeInTheDocument()
+    expect(screen.getByText('1999')).toBeInTheDocument()
     expect(screen.getByText('Breaking Bad')).toBeInTheDocument()
     expect(screen.getByText('classic')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'The Matrix' })).toHaveAttribute('src', 'https://image.tmdb.org/t/p/w92/m.jpg')
+    // The poster tops the ticket card above the written title, so it is decorative.
+    expect(document.querySelector('.cn-ticket__media img')).toHaveAttribute('src', 'https://image.tmdb.org/t/p/w500/m.jpg')
   })
 
   it('shows an empty state', async () => {

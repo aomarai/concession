@@ -1,0 +1,90 @@
+/* Generated from design/tokens.json by scripts/tokens-css.mjs. Do not edit by hand. */
+:root,
+[data-theme="matinee"] {
+  color-scheme: light;
+  --surface: #efebe6;
+  --surface-raised: #fbfaf8;
+  --surface-sunken: #e5dfd8;
+  --ink: #191314;
+  --ink-muted: #6b605c;
+  --line: #ddd5cd;
+  --line-strong: #877a73;
+  --velvet: #8c1c3b;
+  --velvet-deep: #4a0d1f;
+  --on-velvet: #fbfaf8;
+  --on-ink: #fbfaf8;
+  --butter: #f5b829;
+  --on-butter: #191314;
+  --box-office: #0d7468;
+  --on-box-office: #ffffff;
+  --cherry: #b3243a;
+  --cherry-wash: #f6dfe0;
+  --stub: #e9d6d2;
+  --dropped: #6f625e;
+  --glass: rgba(25, 19, 20, 0.58);
+  --on-glass: #ffffff;
+  --focus: var(--velvet);
+  --shadow-card: 0 1px 2px rgba(25, 19, 20, 0.06), 0 24px 48px -28px rgba(25, 19, 20, 0.35);
+  --shadow-float: 0 10px 28px -12px rgba(25, 19, 20, 0.45);
+  --shadow-accent: 0 12px 24px -12px rgba(140, 28, 59, 0.65);
+}
+
+[data-theme="late-show"] {
+  color-scheme: dark;
+  --surface: #120d0e;
+  --surface-raised: #1e1718;
+  --surface-sunken: #0b0809;
+  --ink: #f4eee9;
+  --ink-muted: #b7aaa5;
+  --line: #30272a;
+  --line-strong: #7e6f6d;
+  --velvet: #f0708f;
+  --velvet-deep: #0e0306;
+  --on-velvet: #120d0e;
+  --on-ink: #120d0e;
+  --butter: #ffd35c;
+  --on-butter: #191314;
+  --box-office: #47c9b4;
+  --on-box-office: #10201d;
+  --cherry: #ff7a88;
+  --cherry-wash: #3a1218;
+  --stub: #3b2228;
+  --dropped: #a3938f;
+  --glass: rgba(18, 13, 14, 0.62);
+  --on-glass: #ffffff;
+  --focus: var(--butter);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 48px -28px rgba(0, 0, 0, 0.9);
+  --shadow-float: 0 10px 28px -12px rgba(0, 0, 0, 0.9);
+  --shadow-accent: 0 12px 24px -12px rgba(240, 112, 143, 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="matinee"]) {
+    color-scheme: dark;
+    --surface: #120d0e;
+    --surface-raised: #1e1718;
+    --surface-sunken: #0b0809;
+    --ink: #f4eee9;
+    --ink-muted: #b7aaa5;
+    --line: #30272a;
+    --line-strong: #7e6f6d;
+    --velvet: #f0708f;
+    --velvet-deep: #0e0306;
+    --on-velvet: #120d0e;
+    --on-ink: #120d0e;
+    --butter: #ffd35c;
+    --on-butter: #191314;
+    --box-office: #47c9b4;
+    --on-box-office: #10201d;
+    --cherry: #ff7a88;
+    --cherry-wash: #3a1218;
+    --stub: #3b2228;
+    --dropped: #a3938f;
+    --glass: rgba(18, 13, 14, 0.62);
+    --on-glass: #ffffff;
+    --focus: var(--butter);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 48px -28px rgba(0, 0, 0, 0.9);
+    --shadow-float: 0 10px 28px -12px rgba(0, 0, 0, 0.9);
+    --shadow-accent: 0 12px 24px -12px rgba(240, 112, 143, 0.45);
+  }
+}

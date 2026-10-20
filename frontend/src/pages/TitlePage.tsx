@@ -6,8 +6,16 @@ import {
 } from '../api/endpoints'
 import type { Progress, Review, ReviewInput, TitleKind, WatchStatus } from '../api/types'
 import Alert from '../components/Alert'
+import Badge from '../components/Badge'
+import Button from '../components/Button'
+import Pager from '../components/Pager'
+import PopRow from '../components/PopRow'
 import Poster from '../components/Poster'
+import { RatingDisplay, RatingInput } from '../components/Rating'
+import SegmentedControl from '../components/SegmentedControl'
+import Icon from '../components/Icon'
 import { errorMessage, year } from '../lib/format'
+import { STATUSES } from '../lib/status'
 
 interface TitleView {
   name: string
@@ -15,12 +23,12 @@ interface TitleView {
   meta: string
   tagline?: string
   overview: string
-  genres?: string
+  genres?: string[]
   cast?: string
   seasons?: number
 }
 
-const joinNames = (xs?: { name: string }[]) => (xs?.length ? xs.map((x) => x.name).join(', ') : undefined)
+const names = (xs?: { name: string }[]) => (xs?.length ? xs.map((x) => x.name) : undefined)
 
 async function loadTitle(kind: TitleKind, tmdbId: number): Promise<TitleView> {
   if (kind === 'movies') {
@@ -28,10 +36,10 @@ async function loadTitle(kind: TitleKind, tmdbId: number): Promise<TitleView> {
     return {
       name: m.title,
       poster: m.poster_path,
-      meta: [year(m.release_date), m.runtime ? `${m.runtime} min` : ''].filter(Boolean).join(' · '),
+      meta: [year(m.release_date), m.runtime ? `${m.runtime} min` : ''].filter(Boolean).join(', '),
       tagline: m.tagline,
       overview: m.overview,
-      genres: joinNames(m.genres),
+      genres: names(m.genres),
       cast: m.actors?.join(', '),
     }
   }
@@ -40,7 +48,7 @@ async function loadTitle(kind: TitleKind, tmdbId: number): Promise<TitleView> {
     name: s.name,
     meta: '',
     overview: s.overview,
-    genres: joinNames(s.genres),
+    genres: names(s.genres),
     cast: s.actors?.join(', '),
     seasons: s.seasons?.length,
   }
@@ -56,7 +64,7 @@ function ReviewForm({
   onSubmit: (input: ReviewInput) => void
   onCancel?: () => void
 }) {
-  const [rating, setRating] = useState(initial ? String(initial.rating) : '')
+  const [rating, setRating] = useState(initial?.rating ?? 0)
   const [headline, setHeadline] = useState(initial?.title ?? '')
   const [content, setContent] = useState(initial?.content ?? '')
   const [missing, setMissing] = useState(false)
@@ -65,42 +73,35 @@ function ReviewForm({
     e.preventDefault()
     if (!rating) return setMissing(true)
     setMissing(false)
-    onSubmit({ rating: Number(rating), title: headline, content })
+    onSubmit({ rating, title: headline, content })
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2">
-      <label className="flex flex-col text-sm">
-        Rating
-        <select value={rating} onChange={(e) => setRating(e.target.value)} className="w-32 rounded bg-zinc-800 px-2 py-1">
-          <option value="">Choose…</option>
-          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-      </label>
-      <label className="flex flex-col text-sm">
+    <form onSubmit={submit} className="flex w-full flex-col gap-4">
+      <div className="cn-field">
+        <span>Your rating</span>
+        <RatingInput label="Rating" value={rating} onChange={setRating} />
+      </div>
+      <label className="cn-field">
         Headline
-        <input value={headline} onChange={(e) => setHeadline(e.target.value)} className="rounded bg-zinc-800 px-2 py-1" />
+        <input value={headline} onChange={(e) => setHeadline(e.target.value)} className="cn-input" />
       </label>
-      <label className="flex flex-col text-sm">
+      <label className="cn-field">
         Review
-        <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} className="rounded bg-zinc-800 px-2 py-1" />
+        <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} className="cn-textarea" />
       </label>
       {missing && <Alert message="Choose a rating." />}
       {error && <Alert message={error} />}
-      <div className="flex gap-2">
-        <button type="submit" disabled={pending} className="rounded bg-amber-500 px-3 py-1 font-medium text-zinc-900">{submitLabel}</button>
-        {onCancel && <button type="button" onClick={onCancel} className="rounded bg-zinc-800 px-3 py-1">Cancel</button>}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={pending}>{submitLabel}</Button>
+        {onCancel && <Button variant="quiet" onClick={onCancel}>Cancel</Button>}
       </div>
     </form>
   )
 }
 
-const STATUSES: [WatchStatus, string][] = [
-  ['plan_to_watch', 'Plan to watch'],
-  ['watching', 'Watching'],
-  ['completed', 'Completed'],
-  ['dropped', 'Dropped'],
-]
+type Tracking = WatchStatus | 'none'
+const TRACKING = [{ value: 'none' as Tracking, label: 'Not tracking' }, ...STATUSES]
 
 function ProgressControls({ kind, tmdbId, progress }: { kind: TitleKind; tmdbId: number; progress: Progress | null }) {
   const qc = useQueryClient()
@@ -124,51 +125,41 @@ function ProgressControls({ kind, tmdbId, progress }: { kind: TitleKind; tmdbId:
     save.mutate({ status, last_season_num: s, last_episode_num: e })
   }
 
-  function changeStatus(value: string) {
-    if (value === '') {
-      if (progress) clear.mutate()
-      return
-    }
-    const status = value as WatchStatus
+  // The control only reports a change, so "none" here means a tracked title is being cleared.
+  function changeStatus(value: Tracking) {
+    if (value === 'none') return clear.mutate()
     save.mutate(kind === 'shows' && progress
-      ? { status, last_season_num: progress.last_season_num, last_episode_num: progress.last_episode_num }
-      : { status })
+      ? { status: value, last_season_num: progress.last_season_num, last_episode_num: progress.last_episode_num }
+      : { status: value })
   }
 
   return (
-    <div className="space-y-2">
-      <label className="flex flex-col text-sm">
-        Your status
-        <select value={progress?.status ?? ''} disabled={busy} onChange={(e) => changeStatus(e.target.value)} className="w-44 rounded bg-zinc-800 px-2 py-1">
-          <option value="">Not tracking</option>
-          {STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
+    <section className="cn-panel">
+      <h2 className="t-display-m m-0">Your status</h2>
+      <SegmentedControl label="Your status" segments={TRACKING} value={progress?.status ?? 'none'} onChange={changeStatus} disabled={busy} />
       {kind === 'shows' && progress && (
-        <div className="flex items-end gap-2">
-          <label className="flex flex-col text-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="cn-field">
             Season
-            <input type="number" min={0} value={season} onChange={(e) => setSeason(e.target.value)} className="w-20 rounded bg-zinc-800 px-2 py-1" />
+            <input type="number" inputMode="numeric" min={0} value={season} onChange={(e) => setSeason(e.target.value)} className="cn-input w-24" />
           </label>
-          <label className="flex flex-col text-sm">
+          <label className="cn-field">
             Episode
-            <input type="number" min={0} value={episode} onChange={(e) => setEpisode(e.target.value)} className="w-20 rounded bg-zinc-800 px-2 py-1" />
+            <input type="number" inputMode="numeric" min={0} value={episode} onChange={(e) => setEpisode(e.target.value)} className="cn-input w-24" />
           </label>
-          <button onClick={() => saveProgress(progress.status)} disabled={busy} className="rounded bg-zinc-800 px-3 py-1 text-sm disabled:opacity-50">
-            Save progress
-          </button>
+          <Button variant="secondary" onClick={() => saveProgress(progress.status)} disabled={busy}>Save progress</Button>
         </div>
       )}
       {invalid && <Alert message="Season and episode must be whole numbers, 0 or more." />}
       {error !== undefined && <Alert message={errorMessage(error)} />}
-    </div>
+    </section>
   )
 }
 
 function ProgressPanel({ kind, tmdbId }: { kind: TitleKind; tmdbId: number }) {
   const progress = useQuery({ queryKey: ['progress', kind, tmdbId], queryFn: () => getProgress(kind, tmdbId) })
   if (progress.isError) return <Alert message={errorMessage(progress.error)} />
-  if (progress.data === undefined) return <p className="text-zinc-400">Loading…</p>
+  if (progress.data === undefined) return <p className="t-body text-ink-muted">Loading…</p>
   const p = progress.data
   return <ProgressControls key={`${p?.status}-${p?.last_season_num}-${p?.last_episode_num}`} kind={kind} tmdbId={tmdbId} progress={p} />
 }
@@ -194,25 +185,28 @@ function Reviews({ kind, tmdbId }: { kind: TitleKind; tmdbId: number }) {
 
   if (reviews.isError) return <Alert message={errorMessage(reviews.error)} />
   const data = reviews.data
-  if (!data) return <p className="text-zinc-400">Loading reviews…</p>
+  if (!data) return <p className="t-body text-ink-muted">Loading reviews…</p>
 
   const mine = data.reviews.find((r) => r.author.id === me.data?.id)
-  const pages = Math.ceil(data.total / data.per_page)
   const count = data.summary?.count ?? 0
 
   return (
-    <section className="space-y-4">
-      <h2 className="text-xl font-semibold">Reviews</h2>
-      {data.summary && count > 0 && (
-        <p className="text-zinc-400">{`${data.summary.average} average · ${count} ${count === 1 ? 'review' : 'reviews'}`}</p>
-      )}
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h2 className="t-display-m m-0">Reviews</h2>
+        {data.summary && count > 0 && (
+          <p className="t-body m-0 text-ink-muted">{`${data.summary.average} average from ${count} ${count === 1 ? 'review' : 'reviews'}`}</p>
+        )}
+      </div>
       {!mine && (
-        <ReviewForm submitLabel="Post review" pending={create.isPending} error={create.isError ? errorMessage(create.error) : undefined} onSubmit={(b) => create.mutate(b)} />
+        <div className="cn-panel">
+          <ReviewForm submitLabel="Post review" pending={create.isPending} error={create.isError ? errorMessage(create.error) : undefined} onSubmit={(b) => create.mutate(b)} />
+        </div>
       )}
-      {data.reviews.length === 0 && <p className="text-zinc-400">No reviews yet.</p>}
-      <ul className="space-y-3">
-        {data.reviews.map((r) => (
-          <li key={r.id} className="space-y-1 rounded bg-zinc-900 p-3">
+      {data.reviews.length === 0 && <p className="t-body m-0 text-ink-muted">No reviews yet.</p>}
+      <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        {data.reviews.map((r, i) => (
+          <PopRow key={r.id} index={i} className="flex-col items-stretch gap-2">
             {r === mine && editing ? (
               <ReviewForm
                 initial={r} submitLabel="Save" pending={update.isPending}
@@ -221,38 +215,33 @@ function Reviews({ kind, tmdbId }: { kind: TitleKind; tmdbId: number }) {
               />
             ) : (
               <>
-                <p>
-                  <strong>{r.author.display_name}</strong>{' '}
-                  {r === mine && <span className="text-amber-400">Your review</span>}{' '}
-                  <span className="text-zinc-400">{r.rating}/10</span>
-                </p>
-                {r.title && <p className="font-medium">{r.title}</p>}
-                {r.content && <p className="text-sm text-zinc-300">{r.content}</p>}
+                <div className="flex flex-wrap items-center gap-3">
+                  <strong className="t-title">{r.author.display_name}</strong>
+                  {r === mine && <Badge tone="velvet">Your review</Badge>}
+                  <RatingDisplay value={r.rating} />
+                </div>
+                {r.title && <p className="t-label m-0">{r.title}</p>}
+                {r.content && <p className="t-body m-0 max-w-[70ch]">{r.content}</p>}
                 {r === mine && (
-                  <div className="flex gap-3 text-sm">
-                    <button onClick={() => setEditing(true)} className="hover:underline">Edit</button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="s" variant="secondary" onClick={() => setEditing(true)}>Edit</Button>
                     {confirming ? (
                       <>
-                        <button onClick={() => remove.mutate(r.id)} className="text-red-400 hover:underline">Confirm delete</button>
-                        <button onClick={() => setConfirming(false)} className="hover:underline">Keep</button>
+                        <Button size="s" variant="danger" onClick={() => remove.mutate(r.id)}>Confirm delete</Button>
+                        <Button size="s" variant="quiet" onClick={() => setConfirming(false)}>Keep</Button>
                       </>
                     ) : (
-                      <button onClick={() => setConfirming(true)} className="text-red-400 hover:underline">Delete</button>
+                      <Button size="s" variant="danger" onClick={() => setConfirming(true)}>Delete</Button>
                     )}
                   </div>
                 )}
                 {r === mine && remove.isError && <Alert message={errorMessage(remove.error)} />}
               </>
             )}
-          </li>
+          </PopRow>
         ))}
       </ul>
-      {pages > 1 && (
-        <div className="flex gap-2">
-          <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="rounded bg-zinc-800 px-3 py-1 disabled:opacity-50">Previous</button>
-          <button disabled={page >= pages} onClick={() => setPage(page + 1)} className="rounded bg-zinc-800 px-3 py-1 disabled:opacity-50">Next</button>
-        </div>
-      )}
+      <Pager page={page} total={data.total} perPage={data.per_page} onChange={setPage} />
     </section>
   )
 }
@@ -262,21 +251,27 @@ export default function TitlePage({ kind }: { kind: TitleKind }) {
   const title = useQuery({ queryKey: ['title', kind, tmdbId], queryFn: () => loadTitle(kind, tmdbId) })
 
   if (title.isError) return <Alert message={errorMessage(title.error)} />
-  if (!title.data) return <p className="text-zinc-400">Loading…</p>
+  if (!title.data) return <p className="t-body text-ink-muted">Loading…</p>
   const t = title.data
 
   return (
-    <article className="space-y-8">
-      <div className="flex gap-4">
-        <Poster path={t.poster} title={t.name} />
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">{t.name}</h1>
-          {t.meta && <p className="text-zinc-400">{t.meta}</p>}
-          {t.seasons !== undefined && <p className="text-zinc-400">{`${t.seasons} ${t.seasons === 1 ? 'season' : 'seasons'}`}</p>}
-          {t.tagline && <p className="italic text-zinc-400">{t.tagline}</p>}
-          {t.genres && <p className="text-sm text-amber-400">{t.genres}</p>}
-          {t.overview && <p>{t.overview}</p>}
-          {t.cast && <p className="text-sm text-zinc-400">Cast: {t.cast}</p>}
+    <article className="flex flex-col gap-10">
+      <div className="flex flex-col gap-8 sm:flex-row sm:items-end">
+        <Poster path={t.poster} title={t.name} size="l" />
+        <div className="flex min-w-0 flex-col gap-4 sm:pb-2">
+          <h1 className="t-display-l page-title">{t.name}</h1>
+          {t.meta && <p className="t-body m-0 text-ink-muted">{t.meta}</p>}
+          {t.seasons !== undefined && <p className="t-body m-0 text-ink-muted">{`${t.seasons} ${t.seasons === 1 ? 'season' : 'seasons'}`}</p>}
+          {t.tagline && <p className="t-body m-0 italic text-ink-muted">{t.tagline}</p>}
+          {t.genres && (
+            <p className="m-0 flex flex-wrap gap-2">
+              {t.genres.map((g, i) => (
+                <span key={g} className={i % 2 ? 'cn-feature cn-feature--outline' : 'cn-feature'}><span className="cn-feature__dot"><Icon name="film" /></span>{g}</span>
+              ))}
+            </p>
+          )}
+          {t.overview && <p className="t-body m-0 max-w-[70ch]">{t.overview}</p>}
+          {t.cast && <p className="t-body-s m-0 max-w-[70ch] text-ink-muted">Cast: {t.cast}</p>}
         </div>
       </div>
       <ProgressPanel kind={kind} tmdbId={tmdbId} />

@@ -212,10 +212,10 @@ describe('ProfilePage tracked titles', () => {
     await within(section).findByText('The Matrix')
     await userEvent.click(within(section).getByRole('button', { name: 'Next' }))
     expect(api.listMyProgress).toHaveBeenLastCalledWith(2, undefined)
-    await userEvent.click(within(section).getByRole('button', { name: 'Completed' }))
+    await userEvent.click(within(section).getByRole('radio', { name: 'Completed' }))
     expect(api.listMyProgress).toHaveBeenLastCalledWith(1, 'completed')
-    expect(within(section).getByRole('button', { name: 'Completed' })).toHaveAttribute('aria-pressed', 'true')
-    await userEvent.click(within(section).getByRole('button', { name: 'All' }))
+    expect(within(section).getByRole('radio', { name: 'Completed' })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(within(section).getByRole('radio', { name: 'All' }))
     expect(api.listMyProgress).toHaveBeenLastCalledWith(1, undefined)
   })
 
@@ -245,7 +245,7 @@ describe('ProfilePage tracked titles', () => {
   it('says so when a status has nothing', async () => {
     renderWithProviders(<ProfilePage />)
     await screen.findByText(/nothing tracked yet/i)
-    await userEvent.click(screen.getByRole('button', { name: 'Dropped' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Dropped' }))
     expect(await screen.findByText(/nothing is marked as dropped/i)).toBeInTheDocument()
   })
 
@@ -263,10 +263,10 @@ describe('ProfilePage reviews', () => {
       page: 1, per_page: 20, total: 2,
     })
     renderWithProviders(<ProfilePage />)
-    expect(await screen.findByText('9/10')).toBeInTheDocument()
+    expect(await screen.findByRole('img', { name: 'Rated 9 out of 10' })).toBeInTheDocument()
     expect(screen.getByText('Great')).toBeInTheDocument()
     expect(screen.getByText('Loved it')).toBeInTheDocument()
-    expect(screen.getByText('4/10')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Rated 4 out of 10' })).toBeInTheDocument()
     const reviews = screen.getByRole('heading', { name: 'Your reviews' }).closest('section')!
     expect(within(reviews).getByRole('link', { name: 'Breaking Bad' })).toHaveAttribute('href', '/shows/1396')
   })
