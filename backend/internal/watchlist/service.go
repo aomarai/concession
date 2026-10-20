@@ -13,6 +13,7 @@ import (
 	"github.com/aomarai/concession/internal/events"
 	"github.com/aomarai/concession/internal/keyedlock"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/paging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -257,8 +258,21 @@ func CreateDefaultLists(tx *gorm.DB, userID uuid.UUID) error {
 	return nil
 }
 
-// List returns the watchlists the user owns or collaborates on, newest first.
-func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]Summary, error) {
+// Page is one page of the user's watchlists.
+type Page struct {
+	Watchlists []Summary `json:"watchlists"`
+	Page       int       `json:"page"`
+	PerPage    int       `json:"per_page"`
+	Total      int64     `json:"total"`
+}
+
+// List returns a page of the watchlists the user owns or collaborates on,
+// newest first. Total counts all of them.
+func (s *Service) List(ctx context.Context, userID uuid.UUID, page, perPage int) (*Page, error) {
+	page, perPage, err := paging.Normalize(page, perPage)
+	if err != nil {
+		return nil, err
+	}
 	db := s.DB.WithContext(ctx)
 
 	var collabs []domain.Collaborator
@@ -272,12 +286,16 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]Summary, error)
 		ids = append(ids, c.WatchlistID)
 	}
 
-	var lists []domain.Watchlist
-	q := db.Where("owner_id = ?", userID)
+	q := db.Model(&domain.Watchlist{}).Where("owner_id = ?", userID)
 	if len(ids) > 0 {
 		q = q.Or("id IN ?", ids)
 	}
-	if err := q.Order("created_at DESC, id").Find(&lists).Error; err != nil {
+	out := &Page{Watchlists: []Summary{}, Page: page, PerPage: perPage}
+	if err := q.Count(&out.Total).Error; err != nil {
+		return nil, err
+	}
+	var lists []domain.Watchlist
+	if err := q.Order("created_at DESC, id").Limit(perPage).Offset(paging.Offset(page, perPage)).Find(&lists).Error; err != nil {
 		return nil, err
 	}
 
@@ -285,13 +303,12 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]Summary, error)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Summary, 0, len(lists))
 	for _, w := range lists {
 		role := domain.RoleOwner
 		if w.OwnerID != userID {
 			role = roles[w.ID]
 		}
-		out = append(out, toSummary(w, role, counts[w.ID]))
+		out.Watchlists = append(out.Watchlists, toSummary(w, role, counts[w.ID]))
 	}
 	return out, nil
 }

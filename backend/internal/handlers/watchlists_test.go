@@ -13,6 +13,9 @@ import (
 
 type listBody struct {
 	Watchlists []watchlist.Summary `json:"watchlists"`
+	Page       int                 `json:"page"`
+	PerPage    int                 `json:"per_page"`
+	Total      int64               `json:"total"`
 }
 
 func (a *api) createList(user uuid.UUID, typ string) watchlist.Summary {
@@ -40,9 +43,20 @@ func TestWatchlistLifecycle(t *testing.T) {
 	id := l.ID.String()
 
 	got := decode[listBody](t, a.do(owner, http.MethodGet, "/watchlists", nil))
-	if len(got.Watchlists) != 1 || got.Watchlists[0].ID != l.ID {
+	if len(got.Watchlists) != 1 || got.Watchlists[0].ID != l.ID || got.Total != 1 || got.Page != 1 || got.PerPage != 20 {
 		t.Errorf("list: %+v", got)
 	}
+	newer := a.createList(owner, "show")
+	first := decode[listBody](t, a.do(owner, http.MethodGet, "/watchlists?page=1&per_page=1", nil))
+	if len(first.Watchlists) != 1 || first.Watchlists[0].ID != newer.ID {
+		t.Errorf("first page should hold the newest list: %+v", first)
+	}
+	second := decode[listBody](t, a.do(owner, http.MethodGet, "/watchlists?page=2&per_page=1", nil))
+	if len(second.Watchlists) != 1 || second.Watchlists[0].ID != l.ID || second.Total != 2 || second.Page != 2 || second.PerPage != 1 {
+		t.Errorf("second page should hold the older list: %+v", second)
+	}
+	a.expect(a.do(owner, http.MethodGet, "/watchlists?page=abc", nil), http.StatusBadRequest, "bad_request")
+	a.expect(a.do(owner, http.MethodGet, "/watchlists?per_page=-1", nil), http.StatusBadRequest, "bad_request")
 
 	w := a.do(owner, http.MethodPatch, "/watchlists/"+id, map[string]any{"title": "Saturday", "privacy": "shared"})
 	a.expect(w, http.StatusOK, "")

@@ -1,14 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createWatchlist, listWatchlists } from '../api/endpoints'
 import type { ListType } from '../api/types'
 import Alert from '../components/Alert'
+import Pager from '../components/Pager'
 import { errorMessage } from '../lib/format'
 
 export default function ListsPage() {
   const qc = useQueryClient()
-  const lists = useQuery({ queryKey: ['watchlists'], queryFn: listWatchlists })
+  const [page, setPage] = useState(1)
+  const lists = useQuery({ queryKey: ['watchlists', page], queryFn: () => listWatchlists(page), placeholderData: keepPreviousData })
   const [title, setTitle] = useState('')
   const [type, setType] = useState<ListType>('movie')
   const create = useMutation({
@@ -60,6 +62,7 @@ export default function ListsPage() {
           </li>
         ))}
       </ul>
+      {lists.data && <Pager page={page} total={lists.data.total} perPage={lists.data.per_page} onChange={setPage} />}
     </section>
   )
 }

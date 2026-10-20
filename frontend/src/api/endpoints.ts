@@ -1,5 +1,5 @@
 import { ApiError, request } from './client'
-import type { FriendEntry, FriendRequests, Invite, NotificationPage, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressInput, ProgressPage, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchStatus, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
+import type { FriendEntry, FriendRequests, Invite, NotificationPage, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressInput, ProgressPage, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchStatus, WatchlistDetail, WatchlistItem, WatchlistPage, WatchlistSummary } from './types'
 
 export const getMe = () => request<User>('/me')
 export const updateMe = (body: { display_name?: string; username?: string }) =>
@@ -10,7 +10,8 @@ export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 export const search = (q: string, page = 1) =>
   request<SearchResponse>(`/search?q=${encodeURIComponent(q)}&page=${page}`)
 
-export const listWatchlists = () => request<{ watchlists: WatchlistSummary[] }>('/watchlists')
+export const listWatchlists = (page = 1, perPage?: number) =>
+  request<WatchlistPage>(`/watchlists?page=${page}${perPage ? `&per_page=${perPage}` : ''}`)
 export const getWatchlist = (id: string) => request<WatchlistDetail>(`/watchlists/${id}`)
 export const createWatchlist = (body: { title: string; description?: string; privacy?: Privacy; type: ListType }) =>
   request<WatchlistSummary>('/watchlists', { method: 'POST', body })

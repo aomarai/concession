@@ -3,14 +3,14 @@ import userEvent from '@testing-library/user-event'
 import App from './App'
 import { ApiError } from './api/client'
 import * as api from './api/endpoints'
-import { renderWithProviders } from './test/utils'
+import { renderWithProviders, watchlistPage } from './test/utils'
 
 vi.mock('./api/endpoints')
 
 const me = { id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '' }
 
 beforeEach(() => {
-  vi.mocked(api.listWatchlists).mockResolvedValue({ watchlists: [] })
+  vi.mocked(api.listWatchlists).mockResolvedValue(watchlistPage([]))
   vi.mocked(api.getUnreadCount).mockResolvedValue({ unread_count: 0 })
 })
 

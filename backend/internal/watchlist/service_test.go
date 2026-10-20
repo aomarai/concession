@@ -3,10 +3,13 @@ package watchlist
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/paging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/testutil"
 	"github.com/google/uuid"
@@ -63,8 +66,8 @@ func TestCreateDefaultLists(t *testing.T) {
 	if err := CreateDefaultLists(e.db, e.owner); err != nil {
 		t.Fatal(err)
 	}
-	lists, err := e.svc.List(ctx, e.owner)
-	if err != nil || len(lists) != len(DefaultLists) {
+	page, err := e.svc.List(ctx, e.owner, 0, 0)
+	if lists := page.Watchlists; err != nil || len(lists) != len(DefaultLists) || page.Total != int64(len(DefaultLists)) {
 		t.Fatalf("lists=%v err=%v", lists, err)
 	}
 	testutil.FailOn(t, e.db, "create", "watchlists")
@@ -85,15 +88,15 @@ func TestListShowsOwnedAndSharedWithRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := e.svc.List(ctx, e.owner)
+	page, err := e.svc.List(ctx, e.owner, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("expected 2 lists, got %d", len(got))
+	if len(page.Watchlists) != 2 || page.Total != 2 || page.Page != 1 || page.PerPage != paging.DefaultPerPage {
+		t.Fatalf("expected 2 lists, got %+v", page)
 	}
 	byID := map[uuid.UUID]Summary{}
-	for _, s := range got {
+	for _, s := range page.Watchlists {
 		byID[s.ID] = s
 	}
 	if s := byID[mine]; s.Role != domain.RoleOwner || s.ItemCount != 2 || s.ShareToken == "" {
@@ -109,8 +112,11 @@ func TestListShowsOwnedAndSharedWithRoles(t *testing.T) {
 
 func TestListEmptyAndFailures(t *testing.T) {
 	e := newEnv(t)
-	if got, err := e.svc.List(ctx, e.owner); err != nil || len(got) != 0 {
-		t.Errorf("got %v, %v", got, err)
+	if got, err := e.svc.List(ctx, e.owner, 0, 0); err != nil || got.Watchlists == nil || len(got.Watchlists) != 0 || got.Total != 0 {
+		t.Errorf("got %+v, %v", got, err)
+	}
+	if _, err := e.svc.List(ctx, e.owner, -1, 0); !errors.Is(err, svcerr.ErrInvalid) {
+		t.Errorf("negative page: %v", err)
 	}
 
 	for _, tc := range []struct{ op, table string }{
@@ -120,10 +126,55 @@ func TestListEmptyAndFailures(t *testing.T) {
 			e := newEnv(t)
 			e.newList(t, domain.WatchlistTypeMovie)
 			testutil.FailOn(t, e.db, tc.op, tc.table)
-			if _, err := e.svc.List(ctx, e.owner); !errors.Is(err, testutil.ErrInjected) {
+			if _, err := e.svc.List(ctx, e.owner, 0, 0); !errors.Is(err, testutil.ErrInjected) {
 				t.Errorf("got %v", err)
 			}
 		})
+	}
+	t.Run("page read", func(t *testing.T) {
+		e := newEnv(t)
+		e.newList(t, domain.WatchlistTypeMovie)
+		testutil.FailAfter(t, e.db, "query", "watchlists", 1) // the count succeeds, the page fails
+		if _, err := e.svc.List(ctx, e.owner, 0, 0); !errors.Is(err, testutil.ErrInjected) {
+			t.Errorf("got %v", err)
+		}
+	})
+}
+
+func TestListPages(t *testing.T) {
+	e := newEnv(t)
+	other := Service{DB: e.db, Catalog: e.cat}
+	var want []string
+	for i := 1; i <= 5; i++ {
+		title := fmt.Sprintf("List %d", i)
+		if _, err := e.svc.Create(ctx, e.owner, CreateInput{Title: title, Type: domain.WatchlistTypeMovie}); err != nil {
+			t.Fatal(err)
+		}
+		want = append([]string{title}, want...) // newest first
+		time.Sleep(2 * time.Millisecond)
+	}
+	shared, _ := other.Create(ctx, uuid.New(), CreateInput{Title: "Shared", Type: domain.WatchlistTypeShow})
+	if err := e.db.Create(&domain.Collaborator{UserID: e.owner, WatchlistID: shared.ID, Role: domain.RoleEditor, Status: domain.CollaboratorAccepted}).Error; err != nil {
+		t.Fatal(err)
+	}
+	want = append([]string{"Shared"}, want...)
+
+	var got []string
+	for page := 1; page <= 3; page++ {
+		p, err := e.svc.List(ctx, e.owner, page, 2)
+		if err != nil || p.Total != 6 || p.Page != page || p.PerPage != 2 {
+			t.Fatalf("page %d: %+v, %v", page, p, err)
+		}
+		for _, s := range p.Watchlists {
+			got = append(got, s.Title)
+		}
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("pages should walk owned and shared lists newest first without gaps: got %v want %v", got, want)
+	}
+	past, err := e.svc.List(ctx, e.owner, 9, 2)
+	if err != nil || past.Watchlists == nil || len(past.Watchlists) != 0 || past.Total != 6 {
+		t.Errorf("past the end: %+v, %v", past, err)
 	}
 }
 
