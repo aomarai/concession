@@ -5,8 +5,8 @@ import { getMe, inviteMember, listMembers, removeMember, rotateShareToken, setMe
 import type { Member, MemberRole, WatchlistDetail } from '../api/types'
 import { errorMessage } from '../lib/format'
 import Alert from './Alert'
-
-const button = 'rounded bg-zinc-800 px-2 py-1 text-sm disabled:opacity-40'
+import Avatar from './Avatar'
+import Button from './Button'
 
 export default function SharingPanel({ list }: { list: WatchlistDetail }) {
   const qc = useQueryClient()
@@ -39,7 +39,7 @@ export default function SharingPanel({ list }: { list: WatchlistDetail }) {
   })
 
   if (members.isError) return <Alert message={errorMessage(members.error)} />
-  if (!members.data) return <p className="text-zinc-400">Loading…</p>
+  if (!members.data) return <p className="t-body text-ink-muted">Loading…</p>
 
   const isOwner = list.role === 'owner'
   const myId = me.data?.id
@@ -52,69 +52,70 @@ export default function SharingPanel({ list }: { list: WatchlistDetail }) {
   }
 
   const row = (m: Member, pending = false) => (
-    <li key={m.id} className="flex items-center gap-2 text-sm">
-      <span>{m.display_name}</span>
+    <li key={m.id} className="flex flex-wrap items-center gap-3">
+      <Avatar name={m.display_name} src={m.avatar_url} decorative />
+      <span className="t-label min-w-0 flex-1">{m.display_name}</span>
       {isOwner ? (
         <>
           <select
             aria-label={`Role for ${m.display_name}`} value={m.role}
             onChange={(e) => changeRole.mutate({ userId: m.id, role: e.target.value as MemberRole })}
-            className="rounded bg-zinc-800 px-1 py-0.5"
+            className="cn-select"
           >
             <option value="editor">Editor</option>
             <option value="viewer">Viewer</option>
           </select>
-          <button onClick={() => remove.mutate(m.id)} aria-label={pending ? `Cancel invite for ${m.display_name}` : `Remove ${m.display_name}`} className="text-red-400 hover:underline">
+          <Button size="s" variant="danger" onClick={() => remove.mutate(m.id)} aria-label={pending ? `Cancel invite for ${m.display_name}` : `Remove ${m.display_name}`}>
             {pending ? 'Cancel invite' : 'Remove'}
-          </button>
+          </Button>
         </>
       ) : (
-        <span className="text-zinc-400">{m.role}</span>
+        <span className="cn-tag">{m.role}</span>
       )}
     </li>
   )
 
   return (
-    <section className="space-y-3 rounded bg-zinc-900 p-3">
-      <h2 className="text-lg font-semibold">Sharing</h2>
-      <p className="text-sm text-zinc-400">Owner: <span className="text-zinc-100">{members.data.owner.display_name}</span></p>
-      <ul className="space-y-1">{members.data.members.map((m) => row(m))}</ul>
+    <section className="cn-panel">
+      <h2 className="t-display-m m-0">Sharing</h2>
+      <p className="t-body-s m-0 text-ink-muted">Owner: <span className="t-label text-ink">{members.data.owner.display_name}</span></p>
+      <ul className="m-0 flex list-none flex-col gap-3 p-0">{members.data.members.map((m) => row(m))}</ul>
       {isOwner && members.data.pending && members.data.pending.length > 0 && (
         <>
-          <h3 className="text-sm font-medium text-zinc-400">Pending invitations</h3>
-          <ul className="space-y-1">{members.data.pending.map((m) => row(m, true))}</ul>
+          <h3 className="t-label m-0 text-ink-muted">Pending invitations</h3>
+          <ul className="m-0 flex list-none flex-col gap-3 p-0">{members.data.pending.map((m) => row(m, true))}</ul>
         </>
       )}
       {isOwner && (
-        <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col text-sm">
+        <form onSubmit={submit} className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="cn-field min-w-0 flex-1">
             Username or e-mail
-            <input value={who} onChange={(e) => setWho(e.target.value)} className="rounded bg-zinc-800 px-2 py-1" />
+            <input value={who} onChange={(e) => setWho(e.target.value)} autoComplete="off" className="cn-input" />
           </label>
-          <label className="flex flex-col text-sm">
+          <label className="cn-field">
             Role
-            <select value={role} onChange={(e) => setRole(e.target.value as MemberRole)} className="rounded bg-zinc-800 px-2 py-1">
+            <select value={role} onChange={(e) => setRole(e.target.value as MemberRole)} className="cn-select">
               <option value="editor">Editor</option>
               <option value="viewer">Viewer</option>
             </select>
           </label>
-          <button type="submit" disabled={invite.isPending} className="rounded bg-amber-500 px-3 py-1 text-sm font-medium text-zinc-900">Invite</button>
+          <Button type="submit" disabled={invite.isPending}>Invite</Button>
         </form>
       )}
       {isOwner && list.privacy === 'private' && (
-        <p className="text-sm text-zinc-400">Set the list to Shared or Public in List settings to get a share link.</p>
+        <p className="t-body-s m-0 text-ink-muted">Set the list to Shared or Public in List settings to get a share link.</p>
       )}
       {isOwner && list.privacy !== 'private' && list.share_token && (
-        <div className="flex items-end gap-2">
-          <label className="flex flex-1 flex-col text-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="cn-field min-w-0 flex-1">
             Share link
-            <input readOnly value={`${window.location.origin}/shared/${list.share_token}`} className="rounded bg-zinc-800 px-2 py-1" />
+            <input readOnly value={`${window.location.origin}/shared/${list.share_token}`} className="cn-input" />
           </label>
-          <button onClick={() => rotate.mutate()} disabled={rotate.isPending} className={button}>New link</button>
+          <Button variant="secondary" onClick={() => rotate.mutate()} disabled={rotate.isPending}>New link</Button>
         </div>
       )}
       {!isOwner && iAmMember && myId && (
-        <button onClick={() => leave.mutate(myId)} disabled={leave.isPending} className={`${button} text-red-400`}>Leave list</button>
+        <Button variant="danger" className="self-start" onClick={() => leave.mutate(myId)} disabled={leave.isPending}>Leave list</Button>
       )}
       {actionError !== undefined && <Alert message={errorMessage(actionError)} />}
     </section>

@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createWatchlist, listWatchlists } from '../api/endpoints'
 import type { ListType } from '../api/types'
 import Alert from '../components/Alert'
+import Button from '../components/Button'
+import ListCard from '../components/ListCard'
 import Pager from '../components/Pager'
 import { errorMessage } from '../lib/format'
 import { useClampPage } from '../lib/useClampPage'
@@ -29,40 +30,29 @@ export default function ListsPage() {
   }
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold">Your lists</h1>
+    <section className="flex flex-col gap-8">
+      <h1 className="t-display-l page-title">Your lists</h1>
 
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col text-sm">
+      <form onSubmit={submit} className="cn-panel sm:flex-row sm:flex-wrap sm:items-end">
+        <label className="cn-field min-w-0 flex-1">
           Title
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="rounded bg-zinc-800 px-2 py-1" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Friday night horror" className="cn-input" />
         </label>
-        <label className="flex flex-col text-sm">
+        <label className="cn-field">
           Type
-          <select value={type} onChange={(e) => setType(e.target.value as ListType)} className="rounded bg-zinc-800 px-2 py-1">
+          <select value={type} onChange={(e) => setType(e.target.value as ListType)} className="cn-select">
             <option value="movie">Movies</option>
             <option value="show">TV shows</option>
           </select>
         </label>
-        <button type="submit" disabled={create.isPending} className="rounded bg-amber-500 px-3 py-1 font-medium text-zinc-900">
-          Create list
-        </button>
+        <Button type="submit" icon="plus" disabled={create.isPending}>Create list</Button>
       </form>
       {create.isError && <Alert message={errorMessage(create.error)} />}
 
       {lists.isError && <Alert message={errorMessage(lists.error)} />}
-      {lists.data?.watchlists.length === 0 && <p className="text-zinc-400">No lists yet. Create one above.</p>}
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {lists.data?.watchlists.map((l) => (
-          <li key={l.id} className="rounded bg-zinc-900 p-4">
-            <Link to={`/lists/${l.id}`} className="text-lg font-medium text-amber-400 hover:underline">
-              {l.title}
-            </Link>
-            <p className="text-sm text-zinc-400">
-              {l.item_count} {l.item_count === 1 ? 'title' : 'titles'} · {l.type === 'movie' ? 'Movies' : 'TV shows'} · {l.privacy}
-            </p>
-          </li>
-        ))}
+      {lists.data?.watchlists.length === 0 && <p className="t-body m-0 text-ink-muted">No lists yet. Create one above.</p>}
+      <ul className="cn-listcard-grid">
+        {lists.data?.watchlists.map((l, i) => <ListCard key={l.id} list={l} index={i} />)}
       </ul>
       {lists.data && <Pager page={page} total={lists.data.total} perPage={lists.data.per_page} onChange={setPage} />}
     </section>

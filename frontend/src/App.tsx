@@ -1,7 +1,13 @@
+import type { ReactNode } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from './api/client'
 import { getMe, getUnreadCount, logout } from './api/endpoints'
+import Avatar from './components/Avatar'
+import Badge from './components/Badge'
+import Brand from './components/Brand'
+import Button, { buttonClass } from './components/Button'
+import Poster from './components/Poster'
 import FriendsPage from './pages/FriendsPage'
 import InvitesPage from './pages/InvitesPage'
 import ListPage from './pages/ListPage'
@@ -12,26 +18,35 @@ import SearchPage from './pages/SearchPage'
 import SharedListPage from './pages/SharedListPage'
 import TitlePage from './pages/TitlePage'
 import { errorMessage } from './lib/format'
+import { usePop } from './lib/spring'
 
 function SignIn() {
+  const pop = usePop<HTMLAnchorElement>({ entry: true, delay: 160 })
   return (
-    <main className="mx-auto max-w-sm space-y-4 p-8 text-center">
-      <h1 className="text-3xl font-semibold">Concession</h1>
-      <p className="text-zinc-400">Movie and TV watchlists to share with friends.</p>
-      <a href="/api/v1/auth/google/login" className="inline-block rounded bg-amber-500 px-4 py-2 font-medium text-zinc-900">
-        Sign in with Google
-      </a>
+    <main className="mx-auto grid min-h-dvh max-w-[1280px] items-center gap-12 px-6 py-12 sm:px-8 lg:grid-cols-2">
+      <div className="flex flex-col items-start gap-8">
+        <p className="cn-nav__brand m-0"><Brand /></p>
+        <h1 className="t-display-xl page-title">Movie night, sorted.</h1>
+        <p className="t-body m-0 max-w-md text-[18px] leading-7">Movie and TV watchlists to share with friends: plan what to watch, track where you are, and rate it after.</p>
+        <a {...pop} href="/api/v1/auth/google/login" className={buttonClass('secondary')}>Sign in with Google</a>
+      </div>
+      <div className="cn-hero-cards hidden lg:block" aria-hidden="true">
+        {['The Thing', 'Hereditary', 'Alien'].map((t) => <div key={t}><Poster title={t} size="fill" decorative /></div>)}
+      </div>
     </main>
   )
 }
 
-const navClass = ({ isActive }: { isActive: boolean }) => (isActive ? 'text-amber-400' : 'hover:text-amber-300')
+function NavItem({ to, end, children }: { to: string; end?: boolean; children: ReactNode }) {
+  const pop = usePop<HTMLAnchorElement>()
+  return <NavLink {...pop} to={to} end={end} className="cn-nav__link pop">{children}</NavLink>
+}
 
 function UnreadBadge() {
   const unread = useQuery({ queryKey: ['unread'], queryFn: getUnreadCount, refetchInterval: 60_000 })
   const n = unread.data?.unread_count ?? 0
   if (n === 0) return null
-  return <span aria-label={`${n} unread`} className="ml-1 rounded-full bg-amber-500 px-1.5 text-xs font-medium text-zinc-900">{n}</span>
+  return <Badge label={`${n} unread`}>{n > 99 ? '99+' : n}</Badge>
 }
 
 export default function App() {
@@ -42,44 +57,53 @@ export default function App() {
     onSuccess: () => qc.resetQueries(),
   })
 
-  if (me.isPending) return <p className="p-8 text-zinc-400">Loading…</p>
+  if (me.isPending) return <p className="t-body p-8 text-ink-muted">Loading…</p>
   if (me.isError) {
     if (me.error instanceof ApiError && me.error.status === 401) return <SignIn />
     return (
-      <main className="space-y-3 p-8">
-        <p role="alert">{errorMessage(me.error)}</p>
-        <button onClick={() => me.refetch()} className="rounded bg-zinc-800 px-3 py-1">Try again</button>
+      <main className="flex flex-col items-start gap-3 p-8">
+        <p role="alert" className="t-body m-0">{errorMessage(me.error)}</p>
+        <Button variant="secondary" onClick={() => me.refetch()}>Try again</Button>
       </main>
     )
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-4">
-      <header className="mb-6 flex items-center gap-4 border-b border-zinc-800 pb-3">
-        <Link to="/" className="text-lg font-semibold">Concession</Link>
-        <nav className="flex gap-4">
-          <NavLink to="/" end className={navClass}>Lists</NavLink>
-          <NavLink to="/search" className={navClass}>Search</NavLink>
-          <NavLink to="/invites" className={navClass}>Invites</NavLink>
-          <NavLink to="/friends" className={navClass}>Friends</NavLink>
-          <NavLink to="/notifications" className={navClass}>Notifications<UnreadBadge /></NavLink>
+    <>
+      <header className="cn-nav">
+        <Link to="/" className="cn-nav__brand"><Brand /></Link>
+        <nav aria-label="Main" className="cn-nav__main">
+          <ul className="cn-nav__links">
+            <li><NavItem to="/" end>Lists</NavItem></li>
+            <li><NavItem to="/search">Search</NavItem></li>
+            <li><NavItem to="/invites">Invites</NavItem></li>
+            <li><NavItem to="/friends">Friends</NavItem></li>
+            <li><NavItem to="/notifications">Notifications<UnreadBadge /></NavItem></li>
+          </ul>
         </nav>
-        <NavLink to="/profile" className={({ isActive }) => `ml-auto text-sm ${isActive ? 'text-amber-400' : 'text-zinc-400 hover:text-amber-300'}`}>{me.data.display_name}</NavLink>
-        <button onClick={() => signOut.mutate()} className="text-sm hover:underline">Sign out</button>
+        <div className="cn-nav__me">
+          <NavItem to="/profile">
+            <Avatar name={me.data.display_name} src={me.data.avatar_url} decorative />
+            <span>{me.data.display_name}</span>
+          </NavItem>
+          <Button variant="quiet" size="s" onClick={() => signOut.mutate()}>Sign out</Button>
+        </div>
       </header>
-      <Routes>
-        <Route path="/" element={<ListsPage />} />
-        <Route path="/lists/:id" element={<ListPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/invites" element={<InvitesPage />} />
-        <Route path="/friends" element={<FriendsPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/notifications" element={<NotificationsPage />} />
-        <Route path="/shared/:token" element={<SharedListPage />} />
-        <Route path="/movies/:tmdbId" element={<TitlePage kind="movies" />} />
-        <Route path="/shows/:tmdbId" element={<TitlePage kind="shows" />} />
-        <Route path="*" element={<p>Page not found.</p>} />
-      </Routes>
-    </div>
+      <main className="mx-auto max-w-[1280px] px-4 pt-8 pb-16 sm:px-8">
+        <Routes>
+          <Route path="/" element={<ListsPage />} />
+          <Route path="/lists/:id" element={<ListPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/invites" element={<InvitesPage />} />
+          <Route path="/friends" element={<FriendsPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/shared/:token" element={<SharedListPage />} />
+          <Route path="/movies/:tmdbId" element={<TitlePage kind="movies" />} />
+          <Route path="/shows/:tmdbId" element={<TitlePage kind="shows" />} />
+          <Route path="*" element={<p className="t-body text-ink-muted">Page not found.</p>} />
+        </Routes>
+      </main>
+    </>
   )
 }

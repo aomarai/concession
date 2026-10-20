@@ -105,7 +105,14 @@ npm ci
 npm run dev        # http://localhost:5173, proxies /api to $BACKEND_URL (default http://localhost:8080)
 npm test           # Vitest + Testing Library, enforces 100% coverage
 npm run lint && npm run build
+npm run tokens     # regenerate src/styles/tokens.css after editing design/tokens.json
 ```
+
+The UI follows the Concession design system (published as a Design System artifact; its tokens are `design/tokens.json`). Colours, shadows and the two themes (Matinee, the default, and Late show, followed from `prefers-color-scheme`) come from `src/styles/tokens.css`, generated from that file: edit the JSON, run `npm run tokens`, never edit the CSS by hand. Component styles live in the `@layer components` block of `src/index.css` (the design system's `bundle.css` is derived from it). Fonts (Instrument Serif, Gabarito) load from Google Fonts in `index.html`.
+
+Motion is spring physics in `src/lib/spring.ts`: `usePop({ entry, delay, hover, tap })` makes an element pop from `scale(0.9)` past `1.08` to `1` on a stiffness 350 / damping 18 / mass 0.8 spring, writing only `transform` (give the element the `pop` class). It does nothing under `prefers-reduced-motion`. Buttons and nav items pop on hover and press; ticket cards, list cards and rows pop in on entry, staggered.
+
+Brand files are in `design/brand/` (VectorCraft source `concession-brand.vectorcraft` and its SVG exports); `public/` holds the favicon, touch icon, manifest icons and `manifest.webmanifest` made from them. `design/concession.figcraft` is the first FigCraft prototype and predates the current card style.
 
 Routes: `/` (your lists, paged), `/lists/:id` (owners and editors reorder items with the arrow buttons, edit notes and remove items; owners also edit list settings and delete the list), `/search` (the add-to-list picker offers your first 100 lists), `/invites` (accept or decline invitations), `/profile` (your account with "Edit profile" for display name and username, and "Delete account", which asks you to type your username or e-mail and then signs you out; plus your tracked titles, paged and filterable by status, and your reviews), `/friends` (friend list and requests, each paged, add by username or e-mail), `/notifications` (paged inbox, mark read; the nav shows an unread badge refreshed every minute), `/shared/:token` (read-only list behind a share link), `/movies/:tmdbId` and `/shows/:tmdbId` (title details with your watch status — and season/episode for shows — and reviews). The title page recognizes your own review by author ID within the loaded page of reviews (20 per page); if you have reviewed a title but your review is on a later page, posting again returns the backend's `409`.
 

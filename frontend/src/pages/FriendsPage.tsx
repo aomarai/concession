@@ -4,11 +4,12 @@ import {
   acceptFriendRequest, addFriend, declineFriendRequest, listFriendRequests, listFriends, removeFriend,
 } from '../api/endpoints'
 import Alert from '../components/Alert'
+import Avatar from '../components/Avatar'
+import Button from '../components/Button'
 import Pager from '../components/Pager'
+import PopRow from '../components/PopRow'
 import { errorMessage } from '../lib/format'
 import { useClampPage } from '../lib/useClampPage'
-
-const button = 'rounded bg-zinc-800 px-2 py-1 text-sm'
 
 export default function FriendsPage() {
   const qc = useQueryClient()
@@ -39,50 +40,53 @@ export default function FriendsPage() {
   const outgoing = requests.data?.outgoing ?? []
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold">Friends</h1>
+    <section className="flex flex-col gap-8">
+      <h1 className="t-display-l page-title">Friends</h1>
 
-      <form onSubmit={submit} className="flex items-end gap-2">
-        <label className="flex flex-col text-sm">
+      <form onSubmit={submit} className="cn-panel sm:flex-row sm:items-end">
+        <label className="cn-field min-w-0 flex-1">
           Username or e-mail
-          <input value={who} onChange={(e) => setWho(e.target.value)} className="rounded bg-zinc-800 px-2 py-1" />
+          <input value={who} onChange={(e) => setWho(e.target.value)} autoComplete="off" className="cn-input" />
         </label>
-        <button type="submit" disabled={add.isPending} className="rounded bg-amber-500 px-3 py-1 text-sm font-medium text-zinc-900">Add friend</button>
+        <Button type="submit" icon="plus" disabled={add.isPending}>Add friend</Button>
       </form>
       {actionError !== undefined && <Alert message={errorMessage(actionError)} />}
 
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Your friends</h2>
+      <div className="flex flex-col gap-4">
+        <h2 className="t-display-m m-0">Your friends</h2>
         {friends.isError && <Alert message={errorMessage(friends.error)} />}
-        {friends.data?.friends.length === 0 && <p className="text-zinc-400">No friends yet.</p>}
-        <ul className="space-y-2">
-          {friends.data?.friends.map((f) => (
-            <li key={f.id} className="flex items-center gap-3 rounded bg-zinc-900 p-3">
-              <span className="flex-1">{f.user.display_name}</span>
-              <button onClick={() => remove.mutate(f.user.id)} className={`${button} text-red-400`}>Remove</button>
-            </li>
+        {friends.data?.friends.length === 0 && <p className="t-body m-0 text-ink-muted">No friends yet.</p>}
+        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+          {friends.data?.friends.map((f, i) => (
+            <PopRow key={f.id} index={i}>
+              <Avatar name={f.user.display_name} src={f.user.avatar_url} decorative />
+              <span className="t-title min-w-0 flex-1">{f.user.display_name}</span>
+              <Button size="s" variant="danger" onClick={() => remove.mutate(f.user.id)}>Remove</Button>
+            </PopRow>
           ))}
         </ul>
         {friends.data && <Pager page={friendsPage} total={friends.data.total} perPage={friends.data.per_page} onChange={setFriendsPage} />}
       </div>
 
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Requests</h2>
+      <div className="flex flex-col gap-4">
+        <h2 className="t-display-m m-0">Requests</h2>
         {requests.isError && <Alert message={errorMessage(requests.error)} />}
-        {requests.data && incoming.length === 0 && outgoing.length === 0 && <p className="text-zinc-400">No pending requests.</p>}
-        <ul className="space-y-2">
-          {incoming.map((r) => (
-            <li key={r.id} className="flex items-center gap-3 rounded bg-zinc-900 p-3">
-              <span className="flex-1">{r.user.display_name}</span>
-              <button onClick={() => accept.mutate(r.id)} className="rounded bg-amber-500 px-2 py-1 text-sm font-medium text-zinc-900">Accept</button>
-              <button onClick={() => decline.mutate(r.id)} className={button}>Decline</button>
-            </li>
+        {requests.data && incoming.length === 0 && outgoing.length === 0 && <p className="t-body m-0 text-ink-muted">No pending requests.</p>}
+        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+          {incoming.map((r, i) => (
+            <PopRow key={r.id} index={i}>
+              <Avatar name={r.user.display_name} src={r.user.avatar_url} decorative />
+              <span className="t-title min-w-0 flex-1">{r.user.display_name}</span>
+              <Button size="s" onClick={() => accept.mutate(r.id)}>Accept</Button>
+              <Button size="s" variant="secondary" onClick={() => decline.mutate(r.id)}>Decline</Button>
+            </PopRow>
           ))}
-          {outgoing.map((r) => (
-            <li key={r.id} className="flex items-center gap-3 rounded bg-zinc-900 p-3 text-zinc-400">
-              <span className="flex-1"><span>{r.user.display_name}</span> <span className="text-sm">(waiting)</span></span>
-              <button onClick={() => remove.mutate(r.user.id)} className={button}>Cancel request</button>
-            </li>
+          {outgoing.map((r, i) => (
+            <PopRow key={r.id} index={incoming.length + i} quiet>
+              <Avatar name={r.user.display_name} src={r.user.avatar_url} decorative />
+              <span className="min-w-0 flex-1"><span className="t-title">{r.user.display_name}</span> <span className="t-body-s">(waiting)</span></span>
+              <Button size="s" variant="secondary" onClick={() => remove.mutate(r.user.id)}>Cancel request</Button>
+            </PopRow>
           ))}
         </ul>
         {requests.data && <Pager page={requestsPage} total={requests.data.total} perPage={requests.data.per_page} onChange={setRequestsPage} />}

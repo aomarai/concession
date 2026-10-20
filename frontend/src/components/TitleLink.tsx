@@ -16,5 +16,5 @@ function titlePath(it: Titled): string | undefined {
 export default function TitleLink({ item }: { item: Titled }) {
   const to = titlePath(item)
   const name = itemTitle(item)
-  return to ? <Link to={to} className="hover:underline">{name}</Link> : <span>{name}</span>
+  return to ? <Link to={to} className="link">{name}</Link> : <span>{name}</span>
 }

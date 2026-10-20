@@ -3,9 +3,16 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { deleteMe, getMe, listMyProgress, listMyReviews, updateMe } from '../api/endpoints'
 import type { ProgressEntry, User, WatchStatus } from '../api/types'
 import Alert from '../components/Alert'
+import Avatar from '../components/Avatar'
+import Button from '../components/Button'
 import Pager from '../components/Pager'
+import PopRow from '../components/PopRow'
+import { RatingDisplay } from '../components/Rating'
+import SegmentedControl from '../components/SegmentedControl'
+import StatusChip from '../components/StatusChip'
 import TitleLink from '../components/TitleLink'
 import { errorMessage } from '../lib/format'
+import { STATUSES, STATUS_LABEL } from '../lib/status'
 import { useClampPage } from '../lib/useClampPage'
 
 function position(e: ProgressEntry): string | undefined {
@@ -13,9 +20,6 @@ function position(e: ProgressEntry): string | undefined {
     ? `S${e.last_season_num} E${e.last_episode_num}`
     : undefined
 }
-
-const inputClass = 'rounded bg-zinc-900 px-2 py-1'
-const buttonClass = 'rounded bg-zinc-800 px-3 py-1 text-sm disabled:opacity-50'
 
 function EditProfile({ user, onDone }: { user: User; onDone: () => void }) {
   const qc = useQueryClient()
@@ -37,24 +41,24 @@ function EditProfile({ user, onDone }: { user: User; onDone: () => void }) {
   })
   return (
     <form
-      className="space-y-2"
+      className="cn-panel max-w-xl"
       onSubmit={(e) => {
         e.preventDefault()
         save.mutate()
       }}
     >
-      <label className="block text-sm">
+      <label className="cn-field">
         Display name
-        <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={`${inputClass} mt-1 block`} />
+        <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="cn-input" />
       </label>
-      <label className="block text-sm">
+      <label className="cn-field">
         Username
-        <input value={username} onChange={(e) => setUsername(e.target.value)} className={`${inputClass} mt-1 block`} />
+        <input value={username} onChange={(e) => setUsername(e.target.value)} autoCapitalize="none" autoCorrect="off" className="cn-input" />
       </label>
       {save.isError && <Alert message={errorMessage(save.error)} />}
-      <div className="flex gap-2">
-        <button type="submit" disabled={Object.keys(changes).length === 0 || save.isPending} className={buttonClass}>Save</button>
-        <button type="button" onClick={onDone} disabled={save.isPending} className={buttonClass}>Cancel</button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={Object.keys(changes).length === 0 || save.isPending}>Save</Button>
+        <Button variant="quiet" onClick={onDone} disabled={save.isPending}>Cancel</Button>
       </div>
     </form>
   )
@@ -72,23 +76,23 @@ function DeleteAccount({ user, onDone }: { user: User; onDone: () => void }) {
   const matches = t !== '' && (t === user.username.toLowerCase() || t === user.email?.toLowerCase())
   return (
     <form
-      className="space-y-2"
+      className="cn-panel max-w-xl"
       onSubmit={(e) => {
         e.preventDefault()
         remove.mutate()
       }}
     >
-      <p className="text-sm text-zinc-300">
+      <p className="t-body m-0">
         This permanently deletes your account, your lists, reviews, watch progress and friendships. It cannot be undone.
       </p>
-      <label className="block text-sm">
+      <label className="cn-field">
         Type your username or e-mail to confirm
-        <input value={typed} onChange={(e) => setTyped(e.target.value)} className={`${inputClass} mt-1 block`} />
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="none" autoCorrect="off" className="cn-input" />
       </label>
       {remove.isError && <Alert message={errorMessage(remove.error)} />}
-      <div className="flex gap-2">
-        <button type="submit" disabled={!matches || remove.isPending} className="rounded bg-red-700 px-3 py-1 text-sm disabled:opacity-50">Permanently delete</button>
-        <button type="button" onClick={onDone} disabled={remove.isPending} className={buttonClass}>Cancel</button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" variant="danger" disabled={!matches || remove.isPending}>Permanently delete</Button>
+        <Button variant="quiet" onClick={onDone} disabled={remove.isPending}>Cancel</Button>
       </div>
     </form>
   )
@@ -98,58 +102,54 @@ function Account() {
   const me = useQuery({ queryKey: ['me'], queryFn: getMe })
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
   if (me.isError) return <Alert message={errorMessage(me.error)} />
-  if (!me.data) return <p className="text-zinc-400">Loading…</p>
+  if (!me.data) return <p className="t-body text-ink-muted">Loading…</p>
   const u = me.data
   const done = () => setMode('view')
   return (
-    <div className="space-y-4">
-      <header className="flex items-center gap-4">
-        {u.avatar_url && <img src={u.avatar_url} alt={u.display_name} className="h-16 w-16 rounded-full object-cover" />}
-        <div>
-          <h1 className="text-2xl font-semibold">{u.display_name}</h1>
-          <p className="text-zinc-400">@{u.username}</p>
-          {u.email && <p className="text-sm text-zinc-500">{u.email}</p>}
+    <div className="flex flex-col gap-6">
+      <header className="flex items-center gap-5">
+        <Avatar name={u.display_name} src={u.avatar_url} size="l" />
+        <div className="flex min-w-0 flex-col gap-1">
+          <h1 className="t-display-l page-title">{u.display_name}</h1>
+          <p className="t-body m-0 text-ink-muted">@{u.username}</p>
+          {u.email && <p className="t-body-s m-0 text-ink-muted">{u.email}</p>}
         </div>
       </header>
       {mode === 'edit' && <EditProfile user={u} onDone={done} />}
       {mode === 'delete' && <DeleteAccount user={u} onDone={done} />}
       {mode === 'view' && (
-        <div className="flex gap-2">
-          <button onClick={() => setMode('edit')} className={buttonClass}>Edit profile</button>
-          <button onClick={() => setMode('delete')} className={`${buttonClass} text-red-400`}>Delete account</button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setMode('edit')}>Edit profile</Button>
+          <Button variant="danger" onClick={() => setMode('delete')}>Delete account</Button>
         </div>
       )}
     </div>
   )
 }
 
-const STATUS_LABEL: Record<WatchStatus, string> = {
-  watching: 'Watching',
-  plan_to_watch: 'Plan to watch',
-  completed: 'Completed',
-  dropped: 'Dropped',
-}
-const STATUSES = Object.keys(STATUS_LABEL) as WatchStatus[]
+type Filter = WatchStatus | 'all'
+const FILTERS = [{ value: 'all' as Filter, label: 'All' }, ...STATUSES]
 
 function Tracked() {
   const [page, setPage] = useState(1)
-  const [status, setStatus] = useState<WatchStatus | undefined>()
+  const [filter, setFilter] = useState<Filter>('all')
+  const status = filter === 'all' ? undefined : filter
   const progress = useQuery({
     queryKey: ['my-progress', page, status],
     queryFn: () => listMyProgress(page, status),
     placeholderData: keepPreviousData,
   })
   useClampPage(page, progress.data?.total, progress.data?.per_page, setPage)
-  const choose = (s?: WatchStatus) => {
-    setStatus(s)
+  const choose = (f: Filter) => {
+    setFilter(f)
     setPage(1)
   }
   let body
   if (progress.isError) body = <Alert message={errorMessage(progress.error)} />
-  else if (!progress.data) body = <p className="text-zinc-400">Loading…</p>
+  else if (!progress.data) body = <p className="t-body text-ink-muted">Loading…</p>
   else if (progress.data.progress.length === 0) {
     body = (
-      <p className="text-zinc-400">
+      <p className="t-body m-0 text-ink-muted">
         {status ? `Nothing is marked as ${STATUS_LABEL[status].toLowerCase()}.` : 'Nothing tracked yet. Set a status on a title page.'}
       </p>
     )
@@ -157,13 +157,13 @@ function Tracked() {
     const { data } = progress
     body = (
       <>
-        <ul className="space-y-1">
+        <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {data.progress.map((e, i) => (
-            <li key={i} className="flex gap-2 text-sm">
-              <TitleLink item={e} />
-              <span className="text-zinc-400">{STATUS_LABEL[e.status]}</span>
-              <span className="text-zinc-400">{position(e)}</span>
-            </li>
+            <PopRow key={i} index={i}>
+              <span className="t-title min-w-0 flex-1"><TitleLink item={e} /></span>
+              {position(e) && <span className="t-numeral-s text-ink-muted">{position(e)}</span>}
+              <StatusChip status={e.status} />
+            </PopRow>
           ))}
         </ul>
         <Pager page={page} total={data.total} perPage={data.per_page} onChange={setPage} />
@@ -171,19 +171,8 @@ function Tracked() {
     )
   }
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {[undefined, ...STATUSES].map((s) => (
-          <button
-            key={s ?? 'all'}
-            aria-pressed={status === s}
-            onClick={() => choose(s)}
-            className={`rounded px-3 py-1 text-sm ${status === s ? 'bg-amber-500 text-zinc-900' : 'bg-zinc-800'}`}
-          >
-            {s ? STATUS_LABEL[s] : 'All'}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4">
+      <SegmentedControl label="Filter by status" segments={FILTERS} value={filter} onChange={choose} />
       {body}
     </div>
   )
@@ -194,20 +183,21 @@ function MyReviews() {
   const reviews = useQuery({ queryKey: ['my-reviews', page], queryFn: () => listMyReviews(page) })
   useClampPage(page, reviews.data?.total, reviews.data?.per_page, setPage)
   if (reviews.isError) return <Alert message={errorMessage(reviews.error)} />
-  if (!reviews.data) return <p className="text-zinc-400">Loading…</p>
+  if (!reviews.data) return <p className="t-body text-ink-muted">Loading…</p>
   const { data } = reviews
   return (
-    <div className="space-y-3">
-      {data.reviews.length === 0 && <p className="text-zinc-400">You haven't reviewed anything yet.</p>}
-      <ul className="space-y-2">
-        {data.reviews.map((r) => (
-          <li key={r.id} className="space-y-1 rounded bg-zinc-900 p-3">
-            <p className="font-medium">
-              <TitleLink item={r} /> <span className="text-zinc-400">{r.rating}/10</span>
-            </p>
-            {r.title && <p>{r.title}</p>}
-            {r.content && <p className="text-sm text-zinc-300">{r.content}</p>}
-          </li>
+    <div className="flex flex-col gap-4">
+      {data.reviews.length === 0 && <p className="t-body m-0 text-ink-muted">You haven't reviewed anything yet.</p>}
+      <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        {data.reviews.map((r, i) => (
+          <PopRow key={r.id} index={i} className="flex-col items-stretch gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="t-title"><TitleLink item={r} /></span>
+              <RatingDisplay value={r.rating} />
+            </div>
+            {r.title && <p className="t-label m-0">{r.title}</p>}
+            {r.content && <p className="t-body m-0 max-w-[70ch]">{r.content}</p>}
+          </PopRow>
         ))}
       </ul>
       <Pager page={page} total={data.total} perPage={data.per_page} onChange={setPage} />
@@ -217,14 +207,14 @@ function MyReviews() {
 
 export default function ProfilePage() {
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-10">
       <Account />
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">Tracking</h2>
+      <section className="flex flex-col gap-4">
+        <h2 className="t-display-m m-0">Tracking</h2>
         <Tracked />
       </section>
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">Your reviews</h2>
+      <section className="flex flex-col gap-4">
+        <h2 className="t-display-m m-0">Your reviews</h2>
         <MyReviews />
       </section>
     </div>

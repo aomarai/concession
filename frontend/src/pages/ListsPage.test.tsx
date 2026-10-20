@@ -69,7 +69,7 @@ describe('ListsPage', () => {
   it('labels show lists', async () => {
     vi.mocked(api.listWatchlists).mockResolvedValue(watchlistPage([{ ...list, type: 'show' }]))
     renderWithProviders(<ListsPage />)
-    expect(await screen.findByText(/TV shows ·/)).toBeInTheDocument()
+    expect(await screen.findByText('TV shows')).toBeInTheDocument()
   })
 
   it('pages through lists', async () => {

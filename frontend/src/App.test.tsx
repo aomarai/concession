@@ -95,6 +95,13 @@ describe('App auth gate', () => {
     expect(screen.getByRole('link', { name: /Notifications/ })).toBeInTheDocument()
   })
 
+  it('caps the badge at 99+', async () => {
+    vi.mocked(api.getMe).mockResolvedValue(me)
+    vi.mocked(api.getUnreadCount).mockResolvedValue({ unread_count: 120 })
+    renderWithProviders(<App />)
+    expect(await screen.findByLabelText('120 unread')).toHaveTextContent('99+')
+  })
+
   it('shows no badge when everything is read', async () => {
     vi.mocked(api.getMe).mockResolvedValue(me)
     renderWithProviders(<App />)

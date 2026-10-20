@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "tokens": "node scripts/tokens-css.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",
