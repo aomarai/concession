@@ -1,18 +1,24 @@
 import { useState, type FormEvent } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   acceptFriendRequest, addFriend, declineFriendRequest, listFriendRequests, listFriends, removeFriend,
 } from '../api/endpoints'
 import Alert from '../components/Alert'
+import Pager from '../components/Pager'
 import { errorMessage } from '../lib/format'
+import { useClampPage } from '../lib/useClampPage'
 
 const button = 'rounded bg-zinc-800 px-2 py-1 text-sm'
 
 export default function FriendsPage() {
   const qc = useQueryClient()
   const [who, setWho] = useState('')
-  const friends = useQuery({ queryKey: ['friends'], queryFn: listFriends })
-  const requests = useQuery({ queryKey: ['friend-requests'], queryFn: listFriendRequests })
+  const [friendsPage, setFriendsPage] = useState(1)
+  const [requestsPage, setRequestsPage] = useState(1)
+  const friends = useQuery({ queryKey: ['friends', friendsPage], queryFn: () => listFriends(friendsPage), placeholderData: keepPreviousData })
+  const requests = useQuery({ queryKey: ['friend-requests', requestsPage], queryFn: () => listFriendRequests(requestsPage), placeholderData: keepPreviousData })
+  useClampPage(friendsPage, friends.data?.total, friends.data?.per_page, setFriendsPage)
+  useClampPage(requestsPage, requests.data?.total, requests.data?.per_page, setRequestsPage)
   const refresh = () => Promise.all([
     qc.invalidateQueries({ queryKey: ['friends'] }),
     qc.invalidateQueries({ queryKey: ['friend-requests'] }),
@@ -57,6 +63,7 @@ export default function FriendsPage() {
             </li>
           ))}
         </ul>
+        {friends.data && <Pager page={friendsPage} total={friends.data.total} perPage={friends.data.per_page} onChange={setFriendsPage} />}
       </div>
 
       <div className="space-y-2">
@@ -78,6 +85,7 @@ export default function FriendsPage() {
             </li>
           ))}
         </ul>
+        {requests.data && <Pager page={requestsPage} total={requests.data.total} perPage={requests.data.per_page} onChange={setRequestsPage} />}
       </div>
     </section>
   )

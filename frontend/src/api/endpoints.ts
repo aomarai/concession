@@ -1,5 +1,5 @@
 import { ApiError, request } from './client'
-import type { FriendEntry, FriendRequests, Invite, NotificationPage, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressInput, ProgressPage, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchStatus, WatchlistDetail, WatchlistItem, WatchlistPage, WatchlistSummary } from './types'
+import type { FriendEntry, FriendPage, FriendRequests, Invite, NotificationPage, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressInput, ProgressPage, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchStatus, WatchlistDetail, WatchlistItem, WatchlistPage, WatchlistSummary } from './types'
 
 export const getMe = () => request<User>('/me')
 export const updateMe = (body: { display_name?: string; username?: string }) =>
@@ -75,8 +75,8 @@ export const getUnreadCount = () => request<{ unread_count: number }>('/me/notif
 export const markNotificationRead = (id: string) => request<void>(`/me/notifications/${id}/read`, { method: 'POST' })
 export const markAllNotificationsRead = () => request<{ marked: number }>('/me/notifications/read-all', { method: 'POST' })
 
-export const listFriends = () => request<{ friends: FriendEntry[] }>('/friends')
-export const listFriendRequests = () => request<FriendRequests>('/friends/requests')
+export const listFriends = (page = 1) => request<FriendPage>(`/friends?page=${page}`)
+export const listFriendRequests = (page = 1) => request<FriendRequests>(`/friends/requests?page=${page}`)
 export const addFriend = (user: string) => request<FriendEntry>('/friends', { method: 'POST', body: { user } })
 export const acceptFriendRequest = (id: string) => request<void>(`/friends/requests/${id}/accept`, { method: 'POST' })
 export const declineFriendRequest = (id: string) => request<void>(`/friends/requests/${id}/decline`, { method: 'POST' })

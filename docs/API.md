@@ -96,9 +96,9 @@ A friend request is sent by username/e-mail or by user ID and stays pending unti
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/v1/friends` | `{"friends":[...]}`: your accepted friends, most recent first |
+| GET | `/api/v1/friends?page=&per_page=` | `{friends, page, per_page, total}`: your accepted friends, most recent first. 20 per page by default, at most 100 |
 | POST | `/api/v1/friends` | Body `{user}` (username or e-mail) or `{user_id}`, not both. `201` with the entry (`status` is `pending`, or `accepted` if it answered their request). `400` for yourself, `404` for an unknown user, `409` if already friends or already asked |
-| GET | `/api/v1/friends/requests` | `{incoming, outgoing}`: pending requests sent to you and by you |
+| GET | `/api/v1/friends/requests?page=&per_page=` | `{incoming, outgoing, page, per_page, total}`: pending requests sent to you and by you, newest first. The page is taken from the combined list of pending requests and split into `incoming` and `outgoing`, so one page can hold either or both; `total` counts both |
 | POST | `/api/v1/friends/requests/:id/accept` | Only the person it was sent to. `204` |
 | POST | `/api/v1/friends/requests/:id/decline` | Only the person it was sent to. `204` |
 | DELETE | `/api/v1/friends/:user_id` | Unfriends, cancels a request you sent, or declines one sent to you. `404` if there is no relationship. `204` |

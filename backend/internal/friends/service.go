@@ -11,6 +11,7 @@ import (
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/keyedlock"
 	"github.com/aomarai/concession/internal/logging"
+	"github.com/aomarai/concession/internal/paging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/userref"
 	"github.com/google/uuid"
@@ -43,10 +44,22 @@ type Entry struct {
 	AcceptedAt *time.Time              `json:"accepted_at,omitempty"`
 }
 
-// Requests are the user's pending friend requests.
+// Requests are one page of the user's pending friend requests, split by
+// direction. Total counts every pending request, incoming and outgoing.
 type Requests struct {
 	Incoming []Entry `json:"incoming"`
 	Outgoing []Entry `json:"outgoing"`
+	Page     int     `json:"page"`
+	PerPage  int     `json:"per_page"`
+	Total    int64   `json:"total"`
+}
+
+// FriendPage is one page of the user's friends.
+type FriendPage struct {
+	Friends []Entry `json:"friends"`
+	Page    int     `json:"page"`
+	PerPage int     `json:"per_page"`
+	Total   int64   `json:"total"`
 }
 
 func (s *Service) notify(ctx context.Context, to, actor uuid.UUID, typ domain.NotificationType) {
@@ -192,30 +205,49 @@ func (s *Service) Remove(ctx context.Context, me, other uuid.UUID) error {
 	return nil
 }
 
-// List returns my friends, most recently befriended first.
-func (s *Service) List(ctx context.Context, me uuid.UUID) ([]Entry, error) {
-	var rows []domain.Friendship
-	err := s.DB.WithContext(ctx).Where("(user_a_id = ? OR user_b_id = ?) AND status = ?", me, me, domain.FriendshipAccepted).
-		Order("accepted_at DESC, id").Find(&rows).Error
+// List returns a page of my friends, most recently befriended first.
+func (s *Service) List(ctx context.Context, me uuid.UUID, page, perPage int) (*FriendPage, error) {
+	page, perPage, err := paging.Normalize(page, perPage)
 	if err != nil {
 		return nil, err
 	}
-	return s.entries(ctx, me, rows)
+	q := s.DB.WithContext(ctx).Model(&domain.Friendship{}).
+		Where("(user_a_id = ? OR user_b_id = ?) AND status = ?", me, me, domain.FriendshipAccepted)
+	out := &FriendPage{Friends: []Entry{}, Page: page, PerPage: perPage}
+	if err := q.Count(&out.Total).Error; err != nil {
+		return nil, err
+	}
+	var rows []domain.Friendship
+	if err := q.Order("accepted_at DESC, id").Limit(perPage).Offset(paging.Offset(page, perPage)).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if out.Friends, err = s.entries(ctx, me, rows); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-// ListRequests returns the pending requests sent to me and sent by me.
-func (s *Service) ListRequests(ctx context.Context, me uuid.UUID) (*Requests, error) {
-	var rows []domain.Friendship
-	err := s.DB.WithContext(ctx).Where("(user_a_id = ? OR user_b_id = ?) AND status = ?", me, me, domain.FriendshipPending).
-		Order("created_at DESC, id").Find(&rows).Error
+// ListRequests returns a page of the pending requests sent to me and sent by
+// me, newest first, split by direction.
+func (s *Service) ListRequests(ctx context.Context, me uuid.UUID, page, perPage int) (*Requests, error) {
+	page, perPage, err := paging.Normalize(page, perPage)
 	if err != nil {
+		return nil, err
+	}
+	q := s.DB.WithContext(ctx).Model(&domain.Friendship{}).
+		Where("(user_a_id = ? OR user_b_id = ?) AND status = ?", me, me, domain.FriendshipPending)
+	out := &Requests{Incoming: []Entry{}, Outgoing: []Entry{}, Page: page, PerPage: perPage}
+	if err := q.Count(&out.Total).Error; err != nil {
+		return nil, err
+	}
+	var rows []domain.Friendship
+	if err := q.Order("created_at DESC, id").Limit(perPage).Offset(paging.Offset(page, perPage)).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	entries, err := s.entries(ctx, me, rows)
 	if err != nil {
 		return nil, err
 	}
-	out := &Requests{Incoming: []Entry{}, Outgoing: []Entry{}}
 	for i, f := range rows {
 		if f.RequestedBy == me {
 			out.Outgoing = append(out.Outgoing, entries[i])

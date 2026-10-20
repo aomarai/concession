@@ -4,7 +4,7 @@ import FriendsPage from './FriendsPage'
 import { ApiError } from '../api/client'
 import * as api from '../api/endpoints'
 import type { FriendEntry } from '../api/types'
-import { renderWithProviders } from '../test/utils'
+import { friendPage, renderWithProviders, requestPage } from '../test/utils'
 
 vi.mock('../api/endpoints')
 
@@ -13,14 +13,54 @@ const entry = (id: string, userId: string, name: string, status: FriendEntry['st
 })
 
 beforeEach(() => {
-  vi.mocked(api.listFriends).mockResolvedValue({ friends: [entry('f1', 'u2', 'Grace H')] })
-  vi.mocked(api.listFriendRequests).mockResolvedValue({
-    incoming: [entry('f2', 'u3', 'Linus T', 'pending')],
-    outgoing: [entry('f3', 'u4', 'Margaret H', 'pending')],
-  })
+  vi.mocked(api.listFriends).mockResolvedValue(friendPage([entry('f1', 'u2', 'Grace H')]))
+  vi.mocked(api.listFriendRequests).mockResolvedValue(
+    requestPage([entry('f2', 'u3', 'Linus T', 'pending')], [entry('f3', 'u4', 'Margaret H', 'pending')]),
+  )
 })
 
 describe('FriendsPage', () => {
+  it('steps back when the page it is on has emptied', async () => {
+    // Page 2 exists when page 1 is fetched, but by the time it is opened the friends there are gone.
+    vi.mocked(api.listFriends).mockImplementation((page = 1) =>
+      Promise.resolve(page === 1 ? friendPage([entry('f1', 'u2', 'Grace H')], { total: 45 }) : friendPage([], { page, total: 20 })),
+    )
+    renderWithProviders(<FriendsPage />)
+    await screen.findByText('Grace H')
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await vi.waitFor(() => expect(api.listFriends).toHaveBeenCalledWith(2))
+    await vi.waitFor(() => expect(api.listFriends).toHaveBeenLastCalledWith(1))
+    expect(await screen.findByText('Grace H')).toBeInTheDocument()
+  })
+
+  it('pages through friends', async () => {
+    vi.mocked(api.listFriends).mockImplementation((page = 1) =>
+      Promise.resolve(friendPage([entry(`f${page}`, `u${page}`, `Friend ${page}`)], { page, total: 45 })),
+    )
+    renderWithProviders(<FriendsPage />)
+    const section = (await screen.findByRole('heading', { name: 'Your friends' })).closest('div')!
+    await within(section).findByText('Friend 1')
+    expect(within(section).getByText('Page 1 of 3')).toBeInTheDocument()
+    await userEvent.click(within(section).getByRole('button', { name: 'Next' }))
+    expect(await within(section).findByText('Friend 2')).toBeInTheDocument()
+    expect(api.listFriends).toHaveBeenLastCalledWith(2)
+    await userEvent.click(within(section).getByRole('button', { name: 'Previous' }))
+    expect(await within(section).findByText('Friend 1')).toBeInTheDocument()
+  })
+
+  it('pages through requests', async () => {
+    vi.mocked(api.listFriendRequests).mockImplementation((page = 1) =>
+      Promise.resolve(requestPage([entry(`r${page}`, `u${page}`, `Asker ${page}`, 'pending')], [], { page, total: 45 })),
+    )
+    renderWithProviders(<FriendsPage />)
+    const section = (await screen.findByRole('heading', { name: 'Requests' })).closest('div')!
+    await within(section).findByText('Asker 1')
+    expect(within(section).getByText('Page 1 of 3')).toBeInTheDocument()
+    await userEvent.click(within(section).getByRole('button', { name: 'Next' }))
+    expect(await within(section).findByText('Asker 2')).toBeInTheDocument()
+    expect(api.listFriendRequests).toHaveBeenLastCalledWith(2)
+  })
+
   it('shows friends and requests', async () => {
     renderWithProviders(<FriendsPage />)
     expect(await screen.findByText('Grace H')).toBeInTheDocument()
@@ -29,8 +69,8 @@ describe('FriendsPage', () => {
   })
 
   it('shows empty states', async () => {
-    vi.mocked(api.listFriends).mockResolvedValue({ friends: [] })
-    vi.mocked(api.listFriendRequests).mockResolvedValue({ incoming: [], outgoing: [] })
+    vi.mocked(api.listFriends).mockResolvedValue(friendPage([]))
+    vi.mocked(api.listFriendRequests).mockResolvedValue(requestPage([], []))
     renderWithProviders(<FriendsPage />)
     expect(await screen.findByText(/no friends yet/i)).toBeInTheDocument()
     expect(await screen.findByText(/no pending requests/i)).toBeInTheDocument()

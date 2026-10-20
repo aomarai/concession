@@ -36,12 +36,16 @@ func (h *FriendHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	list, err := h.svc.List(c.Request.Context(), userID)
+	page, perPage, ok := pageParams(c)
+	if !ok {
+		return
+	}
+	out, err := h.svc.List(c.Request.Context(), userID, page, perPage)
 	if err != nil {
 		RespondServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"friends": list})
+	c.JSON(http.StatusOK, out)
 }
 
 func (h *FriendHandler) Send(c *gin.Context) {
@@ -85,7 +89,11 @@ func (h *FriendHandler) ListRequests(c *gin.Context) {
 	if !ok {
 		return
 	}
-	reqs, err := h.svc.ListRequests(c.Request.Context(), userID)
+	page, perPage, ok := pageParams(c)
+	if !ok {
+		return
+	}
+	reqs, err := h.svc.ListRequests(c.Request.Context(), userID, page, perPage)
 	if err != nil {
 		RespondServiceError(c, err)
 		return

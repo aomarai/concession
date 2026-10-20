@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import App from './App'
 import { ApiError } from './api/client'
 import * as api from './api/endpoints'
-import { renderWithProviders, watchlistPage } from './test/utils'
+import { friendPage, renderWithProviders, requestPage, watchlistPage } from './test/utils'
 
 vi.mock('./api/endpoints')
 
@@ -105,8 +105,8 @@ describe('App auth gate', () => {
   it('has notifications and friends pages', async () => {
     vi.mocked(api.getMe).mockResolvedValue(me)
     vi.mocked(api.listNotifications).mockResolvedValue({ notifications: [], unread_count: 0, page: 1, per_page: 20, total: 0 })
-    vi.mocked(api.listFriends).mockResolvedValue({ friends: [] })
-    vi.mocked(api.listFriendRequests).mockResolvedValue({ incoming: [], outgoing: [] })
+    vi.mocked(api.listFriends).mockResolvedValue(friendPage([]))
+    vi.mocked(api.listFriendRequests).mockResolvedValue(requestPage([], []))
     renderWithProviders(<App />, { route: '/notifications' })
     expect(await screen.findByText(/no notifications/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('link', { name: 'Friends' }))
