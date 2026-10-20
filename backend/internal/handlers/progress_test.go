@@ -12,6 +12,9 @@ import (
 
 type progressList struct {
 	Progress []progress.View `json:"progress"`
+	Page     int             `json:"page"`
+	PerPage  int             `json:"per_page"`
+	Total    int64           `json:"total"`
 }
 
 func TestProgressLifecycle(t *testing.T) {
@@ -35,9 +38,15 @@ func TestProgressLifecycle(t *testing.T) {
 	}
 
 	all := decode[progressList](t, a.do(u, http.MethodGet, "/me/progress", nil))
-	if len(all.Progress) != 2 {
+	if len(all.Progress) != 2 || all.Total != 2 || all.Page != 1 || all.PerPage != 20 {
 		t.Errorf("all: %+v", all)
 	}
+	second := decode[progressList](t, a.do(u, http.MethodGet, "/me/progress?page=2&per_page=1", nil))
+	if len(second.Progress) != 1 || second.Total != 2 || second.Page != 2 || second.PerPage != 1 {
+		t.Errorf("second page: %+v", second)
+	}
+	a.expect(a.do(u, http.MethodGet, "/me/progress?page=abc", nil), http.StatusBadRequest, "bad_request")
+	a.expect(a.do(u, http.MethodGet, "/me/progress?per_page=-1", nil), http.StatusBadRequest, "bad_request")
 	shows := decode[progressList](t, a.do(u, http.MethodGet, "/me/progress?kind=shows", nil))
 	if len(shows.Progress) != 1 || shows.Progress[0].Show == nil {
 		t.Errorf("shows: %+v", shows)

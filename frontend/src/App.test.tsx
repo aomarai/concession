@@ -53,7 +53,7 @@ describe('App auth gate', () => {
 
   it('shows the sign-in page after you delete your account', async () => {
     vi.mocked(api.getMe).mockResolvedValue(me)
-    vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [] })
+    vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [], page: 1, per_page: 20, total: 0 })
     vi.mocked(api.listMyReviews).mockResolvedValue({ reviews: [], page: 1, per_page: 20, total: 0 })
     vi.mocked(api.deleteMe).mockResolvedValue()
     renderWithProviders(<App />, { route: '/profile' })
@@ -115,7 +115,7 @@ describe('App auth gate', () => {
 
   it('links your name to the profile page', async () => {
     vi.mocked(api.getMe).mockResolvedValue(me)
-    vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [] })
+    vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [], page: 1, per_page: 20, total: 0 })
     vi.mocked(api.listMyReviews).mockResolvedValue({ reviews: [], page: 1, per_page: 20, total: 0 })
     renderWithProviders(<App />)
     await userEvent.click(await screen.findByRole('link', { name: 'Ada L' }))

@@ -87,7 +87,8 @@ describe('endpoints', () => {
     ['accept request', () => api.acceptFriendRequest('f1'), ['/friends/requests/f1/accept', { method: 'POST' }]],
     ['decline request', () => api.declineFriendRequest('f1'), ['/friends/requests/f1/decline', { method: 'POST' }]],
     ['unfriend', () => api.removeFriend('u2'), ['/friends/u2', { method: 'DELETE' }]],
-    ['my progress', () => api.listMyProgress(), ['/me/progress']],
+    ['my progress', () => api.listMyProgress(), ['/me/progress?page=1']],
+    ['my progress by status', () => api.listMyProgress(2, 'watching'), ['/me/progress?page=2&status=watching']],
     ['my reviews', () => api.listMyReviews(2), ['/me/reviews?page=2']],
     ['remove item', () => api.removeItem('l1', 'i1'), ['/watchlists/l1/items/i1', { method: 'DELETE' }]],
   ])('%s', async (_name, call, expected) => {

@@ -154,7 +154,7 @@ Personal tracking, separate from watchlists. `:kind` is `movies` or `shows`; `:t
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/v1/me/progress?kind=&status=` | `{"progress":[...]}`, most recently updated first, each with its `movie` or `show`. Both filters are optional |
+| GET | `/api/v1/me/progress?kind=&status=&page=&per_page=` | `{progress, page, per_page, total}`, most recently updated first, each with its `movie` or `show`. The filters are optional; `total` counts everything matching them. Paging as for the other lists (20 per page by default, at most 100) |
 | GET | `/api/v1/me/progress/:kind/:tmdb_id` | One record; `404` if not tracked |
 | PUT | `/api/v1/me/progress/:kind/:tmdb_id` | Create or update. Body `{status, last_season_num?, last_episode_num?}`; `status` is `plan_to_watch`, `watching`, `completed` or `dropped`. Season/episode are for shows only, and an episode needs a season. The title is fetched from TMDB if needed |
 | DELETE | `/api/v1/me/progress/:kind/:tmdb_id` | Stop tracking. `204` |
