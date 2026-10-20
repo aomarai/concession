@@ -61,7 +61,7 @@ A watchlist holds either movies or shows (`type`). Roles: **owner** (the creator
 | Method | Path | Who | Description |
 |---|---|---|---|
 | POST | `/api/v1/watchlists` | any user | Create. Body `{title, description?, privacy?, type}`; `privacy` is `private` (default), `shared` or `public`; `type` is `movie` or `show`. `201` with the list |
-| GET | `/api/v1/watchlists` | any user | `{"watchlists":[...]}`: lists you own or collaborate on, newest first, each with your `role` and `item_count` |
+| GET | `/api/v1/watchlists?page=&per_page=` | any user | `{watchlists, page, per_page, total}`: lists you own or collaborate on, newest first, each with your `role` and `item_count`. 20 per page by default, at most 100 |
 | GET | `/api/v1/watchlists/:id` | any role | The list with its `items` in order, each with the full `movie` or `show`. `share_token` is only included for the owner |
 | PATCH | `/api/v1/watchlists/:id` | owner | Body with any of `title`, `description`, `privacy` |
 | DELETE | `/api/v1/watchlists/:id` | owner | Deletes the list with its items and collaborators. `204` |

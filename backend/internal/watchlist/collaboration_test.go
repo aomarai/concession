@@ -48,7 +48,7 @@ func TestInviteAcceptFlow(t *testing.T) {
 	if _, err := e.svc.Get(ctx, ann, list); !errors.Is(err, svcerr.ErrNotFound) {
 		t.Errorf("pending invitee must not see the list: %v", err)
 	}
-	if lists, _ := e.svc.List(ctx, ann); len(lists) != 0 {
+	if lists, _ := e.svc.List(ctx, ann, 0, 0); len(lists.Watchlists) != 0 {
 		t.Errorf("pending invitee must not see it in their lists: %+v", lists)
 	}
 
@@ -69,7 +69,7 @@ func TestInviteAcceptFlow(t *testing.T) {
 	if err != nil || d.Role != domain.RoleEditor {
 		t.Fatalf("after accepting: %+v, %v", d, err)
 	}
-	if lists, _ := e.svc.List(ctx, ann); len(lists) != 1 || lists[0].Role != domain.RoleEditor {
+	if lists, _ := e.svc.List(ctx, ann, 0, 0); len(lists.Watchlists) != 1 || lists.Watchlists[0].Role != domain.RoleEditor {
 		t.Errorf("accepted list should appear with the role: %+v", lists)
 	}
 	if invites, _ := e.svc.ListInvites(ctx, ann); len(invites) != 0 {
@@ -388,7 +388,7 @@ func TestPublicListsAreReadableByAnyone(t *testing.T) {
 		t.Errorf("delete public list: %v", err)
 	}
 	// Reading a public list does not put it in the reader's own lists.
-	if lists, _ := e.svc.List(ctx, stranger); len(lists) != 0 {
+	if lists, _ := e.svc.List(ctx, stranger, 0, 0); len(lists.Watchlists) != 0 {
 		t.Errorf("public lists are not added to everyone's lists: %+v", lists)
 	}
 	// "shared" is not "public".

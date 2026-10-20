@@ -42,7 +42,7 @@ export default function SearchPage() {
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
-  const lists = useQuery({ queryKey: ['watchlists'], queryFn: listWatchlists })
+  const lists = useQuery({ queryKey: ['watchlists'], queryFn: () => listWatchlists(1, 100) })
   const results = useQuery({
     queryKey: ['search', query, page],
     queryFn: () => search(query, page),

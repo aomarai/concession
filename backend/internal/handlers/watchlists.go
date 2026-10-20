@@ -59,12 +59,16 @@ func (h *WatchlistHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	lists, err := h.svc.List(c.Request.Context(), userID)
+	page, perPage, ok := pageParams(c)
+	if !ok {
+		return
+	}
+	out, err := h.svc.List(c.Request.Context(), userID, page, perPage)
 	if err != nil {
 		RespondServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"watchlists": lists})
+	c.JSON(http.StatusOK, out)
 }
 
 func (h *WatchlistHandler) Get(c *gin.Context) {

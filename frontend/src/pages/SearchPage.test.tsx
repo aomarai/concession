@@ -4,7 +4,7 @@ import SearchPage from './SearchPage'
 import { ApiError } from '../api/client'
 import * as api from '../api/endpoints'
 import type { SearchResponse, WatchlistSummary } from '../api/types'
-import { renderWithProviders } from '../test/utils'
+import { renderWithProviders, watchlistPage } from '../test/utils'
 
 vi.mock('../api/endpoints')
 
@@ -23,7 +23,7 @@ const results: SearchResponse = {
 }
 
 beforeEach(() => {
-  vi.mocked(api.listWatchlists).mockResolvedValue({ watchlists: lists })
+  vi.mocked(api.listWatchlists).mockResolvedValue(watchlistPage(lists))
 })
 
 async function doSearch(q = 'matrix') {
@@ -32,6 +32,11 @@ async function doSearch(q = 'matrix') {
 }
 
 describe('SearchPage', () => {
+  it('loads the most lists a page can hold for the add-to-list picker', async () => {
+    renderWithProviders(<SearchPage />)
+    await vi.waitFor(() => expect(api.listWatchlists).toHaveBeenCalledWith(1, 100))
+  })
+
   it('searches and shows results', async () => {
     vi.mocked(api.search).mockResolvedValue(results)
     renderWithProviders(<SearchPage />)
@@ -115,7 +120,7 @@ describe('SearchPage', () => {
   })
 
   it('hides the add control when no list fits', async () => {
-    vi.mocked(api.listWatchlists).mockResolvedValue({ watchlists: [] })
+    vi.mocked(api.listWatchlists).mockResolvedValue(watchlistPage([]))
     vi.mocked(api.search).mockResolvedValue(results)
     renderWithProviders(<SearchPage />)
     await doSearch()

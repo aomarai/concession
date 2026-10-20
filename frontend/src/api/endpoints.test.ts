@@ -15,7 +15,8 @@ describe('endpoints', () => {
     ['delete account', () => api.deleteMe('ada'), ['/me', { method: 'DELETE', body: { confirm: 'ada' } }]],
     ['logout', () => api.logout(), ['/auth/logout', { method: 'POST' }]],
     ['search', () => api.search('the matrix & co', 2), ['/search?q=the%20matrix%20%26%20co&page=2']],
-    ['lists', () => api.listWatchlists(), ['/watchlists']],
+    ['lists', () => api.listWatchlists(), ['/watchlists?page=1']],
+    ['lists page', () => api.listWatchlists(3, 100), ['/watchlists?page=3&per_page=100']],
     ['list', () => api.getWatchlist('l1'), ['/watchlists/l1']],
     [
       'create',

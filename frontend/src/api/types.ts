@@ -69,6 +69,13 @@ export interface WatchlistItem {
   show?: Show
 }
 
+export interface WatchlistPage {
+  watchlists: WatchlistSummary[]
+  page: number
+  per_page: number
+  total: number
+}
+
 export interface WatchlistDetail extends WatchlistSummary {
   items: WatchlistItem[]
 }
