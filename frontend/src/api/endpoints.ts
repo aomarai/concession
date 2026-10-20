@@ -1,5 +1,5 @@
 import { ApiError, request } from './client'
-import type { FriendEntry, FriendRequests, Invite, NotificationPage, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressEntry, ProgressInput, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
+import type { FriendEntry, FriendRequests, Invite, NotificationPage, ListType, MemberRole, Members, Movie, Privacy, Progress, ProgressInput, ProgressPage, Review, ReviewInput, ReviewPage, SearchResponse, Show, TitleKind, User, WatchStatus, WatchlistDetail, WatchlistItem, WatchlistSummary } from './types'
 
 export const getMe = () => request<User>('/me')
 export const updateMe = (body: { display_name?: string; username?: string }) =>
@@ -81,5 +81,6 @@ export const acceptFriendRequest = (id: string) => request<void>(`/friends/reque
 export const declineFriendRequest = (id: string) => request<void>(`/friends/requests/${id}/decline`, { method: 'POST' })
 export const removeFriend = (userId: string) => request<void>(`/friends/${userId}`, { method: 'DELETE' })
 
-export const listMyProgress = () => request<{ progress: ProgressEntry[] }>('/me/progress')
+export const listMyProgress = (page = 1, status?: WatchStatus) =>
+  request<ProgressPage>(`/me/progress?page=${page}${status ? `&status=${status}` : ''}`)
 export const listMyReviews = (page = 1) => request<ReviewPage>(`/me/reviews?page=${page}`)

@@ -202,3 +202,10 @@ export interface ProgressEntry extends Progress {
   movie?: Movie
   show?: Show
 }
+
+export interface ProgressPage {
+  progress: ProgressEntry[]
+  page: number
+  per_page: number
+  total: number
+}

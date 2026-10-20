@@ -11,6 +11,7 @@ import (
 
 	"github.com/aomarai/concession/internal/domain"
 	"github.com/aomarai/concession/internal/keyedlock"
+	"github.com/aomarai/concession/internal/paging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -181,23 +182,43 @@ type Filter struct {
 	Status domain.WatchStatus
 }
 
-// List returns the user's progress, most recently updated first.
-func (s *Service) List(ctx context.Context, userID uuid.UUID, f Filter) ([]View, error) {
+// Page is one page of a user's progress.
+type Page struct {
+	Progress []View `json:"progress"`
+	Page     int    `json:"page"`
+	PerPage  int    `json:"per_page"`
+	Total    int64  `json:"total"`
+}
+
+// List returns a page of the user's progress, most recently updated first.
+// Total counts every record matching the filter.
+func (s *Service) List(ctx context.Context, userID uuid.UUID, f Filter, page, perPage int) (*Page, error) {
 	if f.Status != "" && !validStatus(f.Status) {
 		return nil, svcerr.Invalid("status must be plan_to_watch, watching, completed or dropped")
 	}
-	q := s.DB.WithContext(ctx).Where("user_id = ?", userID)
+	page, perPage, err := paging.Normalize(page, perPage)
+	if err != nil {
+		return nil, err
+	}
+	q := s.DB.WithContext(ctx).Model(&domain.UserWatchProgress{}).Where("user_id = ?", userID)
 	if f.Kind != "" {
 		q = q.Where("item_type = ?", f.Kind)
 	}
 	if f.Status != "" {
 		q = q.Where("status = ?", f.Status)
 	}
-	var rows []domain.UserWatchProgress
-	if err := q.Order("watched_at DESC, id").Find(&rows).Error; err != nil {
+	out := &Page{Page: page, PerPage: perPage}
+	if err := q.Count(&out.Total).Error; err != nil {
 		return nil, err
 	}
-	return s.attach(ctx, rows)
+	var rows []domain.UserWatchProgress
+	if err := q.Order("watched_at DESC, id").Limit(perPage).Offset(paging.Offset(page, perPage)).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if out.Progress, err = s.attach(ctx, rows); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // attach loads the movies and shows the rows refer to.

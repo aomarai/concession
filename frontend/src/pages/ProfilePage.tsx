@@ -1,17 +1,11 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteMe, getMe, listMyProgress, listMyReviews, updateMe } from '../api/endpoints'
 import type { ProgressEntry, User, WatchStatus } from '../api/types'
 import Alert from '../components/Alert'
+import Pager from '../components/Pager'
 import TitleLink from '../components/TitleLink'
 import { errorMessage } from '../lib/format'
-
-const STATUSES: [WatchStatus, string][] = [
-  ['watching', 'Watching'],
-  ['plan_to_watch', 'Plan to watch'],
-  ['completed', 'Completed'],
-  ['dropped', 'Dropped'],
-]
 
 function position(e: ProgressEntry): string | undefined {
   return e.item_type === 'show' && (e.last_season_num > 0 || e.last_episode_num > 0)
@@ -128,31 +122,67 @@ function Account() {
   )
 }
 
+const STATUS_LABEL: Record<WatchStatus, string> = {
+  watching: 'Watching',
+  plan_to_watch: 'Plan to watch',
+  completed: 'Completed',
+  dropped: 'Dropped',
+}
+const STATUSES = Object.keys(STATUS_LABEL) as WatchStatus[]
+
 function Tracked() {
-  const progress = useQuery({ queryKey: ['my-progress'], queryFn: listMyProgress })
-  if (progress.isError) return <Alert message={errorMessage(progress.error)} />
-  if (!progress.data) return <p className="text-zinc-400">Loading…</p>
-  const entries = progress.data.progress
-  if (entries.length === 0) return <p className="text-zinc-400">Nothing tracked yet. Set a status on a title page.</p>
+  const [page, setPage] = useState(1)
+  const [status, setStatus] = useState<WatchStatus | undefined>()
+  const progress = useQuery({
+    queryKey: ['my-progress', page, status],
+    queryFn: () => listMyProgress(page, status),
+    placeholderData: keepPreviousData,
+  })
+  const choose = (s?: WatchStatus) => {
+    setStatus(s)
+    setPage(1)
+  }
+  let body
+  if (progress.isError) body = <Alert message={errorMessage(progress.error)} />
+  else if (!progress.data) body = <p className="text-zinc-400">Loading…</p>
+  else if (progress.data.progress.length === 0) {
+    body = (
+      <p className="text-zinc-400">
+        {status ? `Nothing is marked as ${STATUS_LABEL[status].toLowerCase()}.` : 'Nothing tracked yet. Set a status on a title page.'}
+      </p>
+    )
+  } else {
+    const { data } = progress
+    body = (
+      <>
+        <ul className="space-y-1">
+          {data.progress.map((e, i) => (
+            <li key={i} className="flex gap-2 text-sm">
+              <TitleLink item={e} />
+              <span className="text-zinc-400">{STATUS_LABEL[e.status]}</span>
+              <span className="text-zinc-400">{position(e)}</span>
+            </li>
+          ))}
+        </ul>
+        <Pager page={page} total={data.total} perPage={data.per_page} onChange={setPage} />
+      </>
+    )
+  }
   return (
-    <div className="space-y-4">
-      {STATUSES.map(([status, label]) => {
-        const group = entries.filter((e) => e.status === status)
-        if (group.length === 0) return null
-        return (
-          <section key={status} className="space-y-1">
-            <h3 className="font-medium">{label}</h3>
-            <ul className="space-y-1">
-              {group.map((e, i) => (
-                <li key={i} className="flex gap-2 text-sm">
-                  <TitleLink item={e} />
-                  <span className="text-zinc-400">{position(e)}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )
-      })}
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {[undefined, ...STATUSES].map((s) => (
+          <button
+            key={s ?? 'all'}
+            aria-pressed={status === s}
+            onClick={() => choose(s)}
+            className={`rounded px-3 py-1 text-sm ${status === s ? 'bg-amber-500 text-zinc-900' : 'bg-zinc-800'}`}
+          >
+            {s ? STATUS_LABEL[s] : 'All'}
+          </button>
+        ))}
+      </div>
+      {body}
     </div>
   )
 }
@@ -163,7 +193,6 @@ function MyReviews() {
   if (reviews.isError) return <Alert message={errorMessage(reviews.error)} />
   if (!reviews.data) return <p className="text-zinc-400">Loading…</p>
   const { data } = reviews
-  const pages = Math.ceil(data.total / data.per_page)
   return (
     <div className="space-y-3">
       {data.reviews.length === 0 && <p className="text-zinc-400">You haven't reviewed anything yet.</p>}
@@ -178,12 +207,7 @@ function MyReviews() {
           </li>
         ))}
       </ul>
-      {pages > 1 && (
-        <div className="flex gap-2">
-          <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="rounded bg-zinc-800 px-3 py-1 text-sm disabled:opacity-50">Previous</button>
-          <button disabled={page >= pages} onClick={() => setPage(page + 1)} className="rounded bg-zinc-800 px-3 py-1 text-sm disabled:opacity-50">Next</button>
-        </div>
-      )}
+      <Pager page={page} total={data.total} perPage={data.per_page} onChange={setPage} />
     </div>
   )
 }

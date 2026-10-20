@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aomarai/concession/internal/domain"
+	"github.com/aomarai/concession/internal/paging"
 	"github.com/aomarai/concession/internal/svcerr"
 	"github.com/aomarai/concession/internal/testutil"
 	"github.com/google/uuid"
@@ -279,29 +280,60 @@ func TestList(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	all, err := s.List(ctx, user, Filter{})
-	if err != nil || len(all) != 3 {
-		t.Fatalf("all: %v, %v", all, err)
+	all, err := s.List(ctx, user, Filter{}, 0, 0)
+	if err != nil || len(all.Progress) != 3 || all.Total != 3 || all.Page != 1 || all.PerPage != paging.DefaultPerPage {
+		t.Fatalf("all: %+v, %v", all, err)
 	}
-	if all[0].Movie == nil || all[0].Movie.TMDBID != 3 || all[1].Show == nil || all[2].Movie.TMDBID != 1 {
-		t.Errorf("expected most recent first with titles attached: %+v", all)
+	if v := all.Progress; v[0].Movie == nil || v[0].Movie.TMDBID != 3 || v[1].Show == nil || v[2].Movie.TMDBID != 1 {
+		t.Errorf("expected most recent first with titles attached: %+v", v)
 	}
 
-	movies, _ := s.List(ctx, user, Filter{Kind: domain.ItemTypeMovie})
-	if len(movies) != 2 {
-		t.Errorf("movies: %d", len(movies))
+	movies, _ := s.List(ctx, user, Filter{Kind: domain.ItemTypeMovie}, 0, 0)
+	if len(movies.Progress) != 2 || movies.Total != 2 {
+		t.Errorf("movies: %+v", movies)
 	}
-	watching, _ := s.List(ctx, user, Filter{Status: domain.StatusWatching})
-	if len(watching) != 1 || watching[0].Show == nil {
+	watching, _ := s.List(ctx, user, Filter{Status: domain.StatusWatching}, 0, 0)
+	if len(watching.Progress) != 1 || watching.Progress[0].Show == nil {
 		t.Errorf("watching: %+v", watching)
 	}
-	none, err := s.List(ctx, user, Filter{Kind: domain.ItemTypeShow, Status: domain.StatusDropped})
-	if err != nil || none == nil || len(none) != 0 {
-		t.Errorf("empty result should be an empty non-nil slice: %v, %v", none, err)
+	none, err := s.List(ctx, user, Filter{Kind: domain.ItemTypeShow, Status: domain.StatusDropped}, 0, 0)
+	if err != nil || none.Progress == nil || len(none.Progress) != 0 || none.Total != 0 {
+		t.Errorf("empty result should be an empty non-nil slice: %+v, %v", none, err)
 	}
 
-	if _, err := s.List(ctx, user, Filter{Status: "binged"}); !errors.Is(err, svcerr.ErrInvalid) {
+	if _, err := s.List(ctx, user, Filter{Status: "binged"}, 0, 0); !errors.Is(err, svcerr.ErrInvalid) {
 		t.Errorf("bad status filter: %v", err)
+	}
+}
+
+func TestListPages(t *testing.T) {
+	s, _ := newSvc(t)
+	user := uuid.New()
+	for id := int64(1); id <= 5; id++ {
+		if _, err := s.Set(ctx, user, domain.ItemTypeMovie, id, SetInput{Status: domain.StatusWatching}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	var seen []int64
+	for page := 1; page <= 3; page++ {
+		got, err := s.List(ctx, user, Filter{}, page, 2)
+		if err != nil || got.Total != 5 || got.Page != page || got.PerPage != 2 {
+			t.Fatalf("page %d: %+v, %v", page, got, err)
+		}
+		for _, v := range got.Progress {
+			seen = append(seen, v.Movie.TMDBID)
+		}
+	}
+	if fmt.Sprint(seen) != "[5 4 3 2 1]" {
+		t.Errorf("pages should walk newest to oldest without gaps or repeats: %v", seen)
+	}
+	past, err := s.List(ctx, user, Filter{}, 9, 2)
+	if err != nil || past.Progress == nil || len(past.Progress) != 0 || past.Total != 5 {
+		t.Errorf("past the end: %+v, %v", past, err)
+	}
+	if _, err := s.List(ctx, user, Filter{}, -1, 2); !errors.Is(err, svcerr.ErrInvalid) {
+		t.Errorf("negative page: %v", err)
 	}
 }
 
@@ -313,9 +345,19 @@ func TestListFailures(t *testing.T) {
 			s.Set(ctx, user, domain.ItemTypeMovie, 1, SetInput{Status: domain.StatusWatching})
 			s.Set(ctx, user, domain.ItemTypeShow, 2, SetInput{Status: domain.StatusWatching})
 			testutil.FailOn(t, s.DB, "query", table)
-			if _, err := s.List(ctx, user, Filter{}); !errors.Is(err, testutil.ErrInjected) {
+			if _, err := s.List(ctx, user, Filter{}, 0, 0); !errors.Is(err, testutil.ErrInjected) {
 				t.Errorf("got %v", err)
 			}
 		})
+	}
+}
+
+func TestListFailsReadingARowsPage(t *testing.T) {
+	s, _ := newSvc(t)
+	user := uuid.New()
+	s.Set(ctx, user, domain.ItemTypeMovie, 1, SetInput{Status: domain.StatusWatching})
+	testutil.FailAfter(t, s.DB, "query", "user_watch_progresses", 1) // the count succeeds, the page fails
+	if _, err := s.List(ctx, user, Filter{}, 0, 0); !errors.Is(err, testutil.ErrInjected) {
+		t.Errorf("got %v", err)
 	}
 }

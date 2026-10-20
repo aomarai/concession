@@ -22,7 +22,7 @@ const review = (o: Partial<Review> = {}): Review => ({
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', email: 'ada@example.com', display_name: 'Ada L', avatar_url: 'https://img.example/a.png' })
-  vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [] })
+  vi.mocked(api.listMyProgress).mockResolvedValue({ progress: [], page: 1, per_page: 20, total: 0 })
   vi.mocked(api.listMyReviews).mockResolvedValue({ reviews: [], page: 1, per_page: 20, total: 0 })
 })
 
@@ -180,29 +180,73 @@ describe('ProfilePage account deletion', () => {
 })
 
 describe('ProfilePage tracked titles', () => {
-  it('groups titles by status with links and show progress', async () => {
-    vi.mocked(api.listMyProgress).mockResolvedValue({
-      progress: [
-        entry({}),
-        entry({ item_type: 'show', status: 'watching', movie: undefined, show: bb, last_season_num: 2, last_episode_num: 5 }),
-        entry({ status: 'completed' }),
-        entry({ item_type: 'show', status: 'plan_to_watch', movie: undefined, show: bb }),
-      ],
-    })
+  const tracked = (progress: ProgressEntry[], o: { page?: number; total?: number } = {}) =>
+    vi.mocked(api.listMyProgress).mockResolvedValue({ progress, page: o.page ?? 1, per_page: 20, total: o.total ?? progress.length })
+
+  it('lists titles with their status, links and show progress', async () => {
+    tracked([
+      entry({}),
+      entry({ item_type: 'show', status: 'watching', movie: undefined, show: bb, last_season_num: 2, last_episode_num: 5 }),
+      entry({ status: 'completed' }),
+      entry({ item_type: 'show', status: 'plan_to_watch', movie: undefined, show: bb }),
+    ])
     renderWithProviders(<ProfilePage />)
-    const watching = (await screen.findByRole('heading', { name: 'Watching' })).closest('section')!
-    expect(within(watching).getByRole('link', { name: 'The Matrix' })).toHaveAttribute('href', '/movies/603')
-    expect(within(watching).getByRole('link', { name: 'Breaking Bad' })).toHaveAttribute('href', '/shows/1396')
-    expect(within(watching).getByText('S2 E5')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Completed' })).toBeInTheDocument()
-    const plan = screen.getByRole('heading', { name: 'Plan to watch' }).closest('section')!
-    expect(within(plan).queryByText(/^S\d/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Dropped' })).not.toBeInTheDocument()
+    const section = (await screen.findByRole('heading', { name: 'Tracking' })).closest('section')!
+    await within(section).findAllByRole('listitem')
+    const rows = within(section).getAllByRole('listitem')
+    expect(rows).toHaveLength(4)
+    expect(within(rows[0]).getByRole('link', { name: 'The Matrix' })).toHaveAttribute('href', '/movies/603')
+    expect(within(rows[0]).getByText('Watching')).toBeInTheDocument()
+    expect(within(rows[1]).getByRole('link', { name: 'Breaking Bad' })).toHaveAttribute('href', '/shows/1396')
+    expect(within(rows[1]).getByText('S2 E5')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('Completed')).toBeInTheDocument()
+    expect(within(rows[3]).getByText('Plan to watch')).toBeInTheDocument()
+    expect(within(rows[3]).queryByText(/^S\d/)).not.toBeInTheDocument()
+    expect(api.listMyProgress).toHaveBeenCalledWith(1, undefined)
+  })
+
+  it('filters by status and goes back to the first page', async () => {
+    tracked([entry({})], { total: 45 })
+    renderWithProviders(<ProfilePage />)
+    const section = (await screen.findByRole('heading', { name: 'Tracking' })).closest('section')!
+    await within(section).findByText('The Matrix')
+    await userEvent.click(within(section).getByRole('button', { name: 'Next' }))
+    expect(api.listMyProgress).toHaveBeenLastCalledWith(2, undefined)
+    await userEvent.click(within(section).getByRole('button', { name: 'Completed' }))
+    expect(api.listMyProgress).toHaveBeenLastCalledWith(1, 'completed')
+    expect(within(section).getByRole('button', { name: 'Completed' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(within(section).getByRole('button', { name: 'All' }))
+    expect(api.listMyProgress).toHaveBeenLastCalledWith(1, undefined)
+  })
+
+  it('pages through titles', async () => {
+    tracked([entry({})], { total: 45 })
+    renderWithProviders(<ProfilePage />)
+    const section = (await screen.findByRole('heading', { name: 'Tracking' })).closest('section')!
+    await within(section).findByText('The Matrix')
+    expect(within(section).getByText('Page 1 of 3')).toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: 'Previous' })).toBeDisabled()
+    await userEvent.click(within(section).getByRole('button', { name: 'Next' }))
+    expect(api.listMyProgress).toHaveBeenLastCalledWith(2, undefined)
+    await within(section).findByText('The Matrix')
+    await userEvent.click(within(section).getByRole('button', { name: 'Next' }))
+    await within(section).findByText('Page 3 of 3')
+    expect(api.listMyProgress).toHaveBeenLastCalledWith(3, undefined)
+    expect(within(section).getByRole('button', { name: 'Next' })).toBeDisabled()
+    await userEvent.click(within(section).getByRole('button', { name: 'Previous' }))
+    expect(api.listMyProgress).toHaveBeenLastCalledWith(2, undefined)
   })
 
   it('shows an empty state', async () => {
     renderWithProviders(<ProfilePage />)
     expect(await screen.findByText(/nothing tracked yet/i)).toBeInTheDocument()
+  })
+
+  it('says so when a status has nothing', async () => {
+    renderWithProviders(<ProfilePage />)
+    await screen.findByText(/nothing tracked yet/i)
+    await userEvent.click(screen.getByRole('button', { name: 'Dropped' }))
+    expect(await screen.findByText(/nothing is marked as dropped/i)).toBeInTheDocument()
   })
 
   it('shows load errors', async () => {
