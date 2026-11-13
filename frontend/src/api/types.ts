@@ -4,6 +4,8 @@ export interface User {
   email?: string
   display_name: string
   avatar_url: string
+  /** Whether the account has a local password (Google-only accounts do not). */
+  has_password?: boolean
 }
 
 export type ListType = 'movie' | 'show'

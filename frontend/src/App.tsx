@@ -6,8 +6,7 @@ import { getMe, getUnreadCount, logout } from './api/endpoints'
 import Avatar from './components/Avatar'
 import Badge from './components/Badge'
 import Brand from './components/Brand'
-import Button, { buttonClass } from './components/Button'
-import Poster from './components/Poster'
+import Button from './components/Button'
 import FriendsPage from './pages/FriendsPage'
 import InvitesPage from './pages/InvitesPage'
 import ListPage from './pages/ListPage'
@@ -16,26 +15,10 @@ import NotificationsPage from './pages/NotificationsPage'
 import ProfilePage from './pages/ProfilePage'
 import SearchPage from './pages/SearchPage'
 import SharedListPage from './pages/SharedListPage'
+import SignInPage from './pages/SignInPage'
 import TitlePage from './pages/TitlePage'
 import { errorMessage } from './lib/format'
 import { usePop } from './lib/spring'
-
-function SignIn() {
-  const pop = usePop<HTMLAnchorElement>({ entry: true, delay: 160 })
-  return (
-    <main className="mx-auto grid min-h-dvh max-w-[1280px] items-center gap-12 px-6 py-12 sm:px-8 lg:grid-cols-2">
-      <div className="flex flex-col items-start gap-8">
-        <p className="cn-nav__brand m-0"><Brand /></p>
-        <h1 className="t-display-xl page-title">Movie night, sorted.</h1>
-        <p className="t-body m-0 max-w-md text-[18px] leading-7">Movie and TV watchlists to share with friends: plan what to watch, track where you are, and rate it after.</p>
-        <a {...pop} href="/api/v1/auth/google/login" className={buttonClass('secondary')}>Sign in with Google</a>
-      </div>
-      <div className="cn-hero-cards hidden lg:block" aria-hidden="true">
-        {['The Thing', 'Hereditary', 'Alien'].map((t) => <div key={t}><Poster title={t} size="fill" decorative /></div>)}
-      </div>
-    </main>
-  )
-}
 
 function NavItem({ to, end, children }: { to: string; end?: boolean; children: ReactNode }) {
   const pop = usePop<HTMLAnchorElement>()
@@ -59,7 +42,7 @@ export default function App() {
 
   if (me.isPending) return <p className="t-body p-8 text-ink-muted">Loading…</p>
   if (me.isError) {
-    if (me.error instanceof ApiError && me.error.status === 401) return <SignIn />
+    if (me.error instanceof ApiError && me.error.status === 401) return <SignInPage />
     return (
       <main className="flex flex-col items-start gap-3 p-8">
         <p role="alert" className="t-body m-0">{errorMessage(me.error)}</p>

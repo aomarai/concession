@@ -7,6 +7,15 @@ export const updateMe = (body: { display_name?: string; username?: string }) =>
 export const deleteMe = (confirm: string) => request<void>('/me', { method: 'DELETE', body: { confirm } })
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
+// Sign in with an e-mail address or a username plus a password.
+export const login = (identifier: string, password: string) =>
+  request<User>('/auth/login', { method: 'POST', body: { identifier, password } })
+export const register = (body: { email: string; username: string; display_name: string; password: string }) =>
+  request<User>('/auth/register', { method: 'POST', body })
+// Set a password, or change the existing one by supplying the current one.
+export const setPassword = (body: { current_password?: string; new_password: string }) =>
+  request<void>('/me/password', { method: 'POST', body })
+
 export const search = (q: string, page = 1) =>
   request<SearchResponse>(`/search?q=${encodeURIComponent(q)}&page=${page}`)
 

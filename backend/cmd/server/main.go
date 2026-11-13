@@ -120,10 +120,13 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 
 	apiV1 := r.Group("/api/v1")
 
-	// Public routes: sign-in is limited per client IP, one budget for all three.
+	// Public routes: sign-in is limited per client IP, one budget for all of
+	// them (Google's two steps, local login, registration, logout).
 	signIn := handlers.RateLimit(ratelimit.New(cfg.RateLimitAuthPerMinute, time.Minute), handlers.ClientIPKey)
 	apiV1.GET("/auth/google/login", signIn, h.Auth.HandleGoogleLogin)
 	apiV1.GET("/auth/google/callback", signIn, h.Auth.HandleGoogleCallback)
+	apiV1.POST("/auth/login", signIn, h.Auth.HandleLogin)
+	apiV1.POST("/auth/register", signIn, h.Auth.HandleRegister)
 	apiV1.POST("/auth/logout", signIn, h.Auth.HandleLogout)
 
 	// Authenticated routes: a per-IP budget charged before the session lookup
@@ -140,6 +143,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, h apiHandlers, logger *slog.Lo
 		handlers.RateLimit(ratelimit.New(cfg.RateLimitAPIPerMinute, time.Minute), handlers.UserKey),
 	)
 	h.User.RegisterRoutes(auth)
+	h.Auth.RegisterRoutes(auth)
 	h.Catalog.RegisterRoutes(auth)
 	h.Watchlist.RegisterRoutes(auth)
 	h.Collab.RegisterRoutes(auth)
