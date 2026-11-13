@@ -132,6 +132,14 @@ Sign in with Google through the backend (`/api/v1/auth/google/login`); because t
 
 `.github/workflows/ci.yml` runs on every PR and push to `main`: gofmt check, `go vet`, tests with race detector and the coverage gate; plus the frontend lint/build/test job once `frontend/package.json` exists.
 
+`.github/workflows/publish.yml` builds both images and pushes them to the GitHub Container Registry as `ghcr.io/aomarai/concession/<backend|frontend>`, tagged with the full commit SHA (and `latest`). It runs on pushes to `main`, on `v*` tags, on `deploy/*` branches (so an unmerged commit can be deployed for testing) and on manual dispatch. A deployment pins the SHA tag:
+
+```sh
+docker pull ghcr.io/aomarai/concession/backend:<commit-sha>
+```
+
+Packages inherit the repository's visibility when they are first published; if a cluster pulls them anonymously the package must be public.
+
 ## Kubernetes
 
-`deploy/helm/concession` is a Helm chart for the API and the frontend (see its README for values and an example install). Postgres is not bundled. The chart was written without a Helm binary, so it has not been linted or rendered; run `helm lint` and `helm template` before relying on it.
+`deploy/helm/concession` is a Helm chart for the API and the frontend (see its README for values and an example install). Postgres is not bundled. The chart was written without a Helm binary, so it has not been linted or rendered; run `helm lint` and `helm template` before relying on it. Set `backend.image.repository` / `frontend.image.repository` to the published images above and `image.tag` to a commit SHA. Hosting it on the homelab cluster is done from the `aomarai/homelab` GitOps repo (`apps/concession/`), which keeps the namespace, Postgres and routing manifests next to the Application.
