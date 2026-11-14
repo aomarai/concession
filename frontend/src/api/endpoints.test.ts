@@ -14,6 +14,13 @@ describe('endpoints', () => {
     ['update profile', () => api.updateMe({ display_name: 'Ada' }), ['/me', { method: 'PATCH', body: { display_name: 'Ada' } }]],
     ['delete account', () => api.deleteMe('ada'), ['/me', { method: 'DELETE', body: { confirm: 'ada' } }]],
     ['logout', () => api.logout(), ['/auth/logout', { method: 'POST' }]],
+    ['login', () => api.login('ada', 'correct horse'), ['/auth/login', { method: 'POST', body: { identifier: 'ada', password: 'correct horse' } }]],
+    [
+      'register',
+      () => api.register({ email: 'ada@example.com', username: 'ada', display_name: 'Ada', password: 'correct horse' }),
+      ['/auth/register', { method: 'POST', body: { email: 'ada@example.com', username: 'ada', display_name: 'Ada', password: 'correct horse' } }],
+    ],
+    ['set password', () => api.setPassword({ new_password: 'correct horse' }), ['/me/password', { method: 'POST', body: { new_password: 'correct horse' } }]],
     ['search', () => api.search('the matrix & co', 2), ['/search?q=the%20matrix%20%26%20co&page=2']],
     ['lists', () => api.listWatchlists(), ['/watchlists?page=1']],
     ['lists page', () => api.listWatchlists(3, 100), ['/watchlists?page=3&per_page=100']],

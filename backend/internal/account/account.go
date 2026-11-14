@@ -1,6 +1,6 @@
-// Package account lets people change their own profile and delete their
-// account. Login is Google-only, so the profile is just a display name and a
-// username; everything else comes from Google.
+// Package account lets people change their own profile, set or change a local
+// password, and delete their account. Sign-in is Google OAuth or a local
+// password; the profile is a display name and a username either way.
 package account
 
 import (
@@ -41,14 +41,14 @@ type ProfileUpdate struct {
 func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, in ProfileUpdate) (*domain.User, error) {
 	changes := map[string]any{}
 	if in.DisplayName != nil {
-		name, err := cleanDisplayName(*in.DisplayName)
+		name, err := CleanDisplayName(*in.DisplayName)
 		if err != nil {
 			return nil, err
 		}
 		changes["display_name"] = name
 	}
 	if in.Username != nil {
-		name, err := cleanUsername(*in.Username)
+		name, err := CleanUsername(*in.Username)
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +75,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, in Profil
 	return &u, nil
 }
 
-func cleanDisplayName(raw string) (string, error) {
+func CleanDisplayName(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
 	switch {
 	case name == "":
@@ -88,7 +88,9 @@ func cleanDisplayName(raw string) (string, error) {
 	return name, nil
 }
 
-func cleanUsername(raw string) (string, error) {
+// CleanUsername lower-cases and validates a chosen username. Registration and
+// profile updates share it so the two can never disagree.
+func CleanUsername(raw string) (string, error) {
 	name := strings.ToLower(strings.TrimSpace(raw))
 	if !usernamePattern.MatchString(name) {
 		return "", svcerr.Invalid("username must be 3 to 32 characters: letters, digits, dots, dashes and underscores")

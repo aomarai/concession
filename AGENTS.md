@@ -9,7 +9,7 @@ Progress is tracked in GitHub issues (one per phase, see "Roadmap") with a branc
 ```
 concession/
 ├── .devcontainer/          # Dev container (Go + Node)
-├── .github/workflows/      # CI (gofmt, vet, test; frontend build when present)
+├── .github/workflows/      # CI (gofmt, vet, test; frontend build) and image publishing (ghcr.io)
 ├── deploy/helm/concession/ # Helm chart (API + frontend; external Postgres; not yet linted/rendered in CI)
 ├── docker-compose.yml      # Local Postgres; `--profile app` adds the API and frontend containers
 ├── .env.example            # Variables for docker compose (copy to .env)
@@ -57,7 +57,7 @@ concession/
 - Reviews are hard-deleted (so the unique user+title index allows re-reviewing); watchlists, items and other models soft-delete.
 - Titles: metadata comes from TMDB and both movies and shows are looked up by TMDB ID. Shows also store a nullable, unique `TVDBID` (read from TMDB `external_ids`) as their TVDB external key.
 - `WatchlistItem` must reference exactly one of movie/show matching `ItemType` (enforced in `BeforeSave`).
-- Login is Google OAuth only (no passwords).
+- Login is Google OAuth or a local password (bcrypt, 12-character minimum), both resolving the same `domain.User`; `PasswordHash` is `json:"-"` and `HasPassword` is derived on load. Every local sign-in failure returns the same `401` (and an unknown identifier burns one bcrypt comparison) so responses cannot be used to enumerate accounts. A Google identity is never auto-linked to an existing password account: there is no e-mail verification to prove the address.
 - Tests: `cd backend && go vet ./... && go test ./...`. Use `testutil.NewDB` (in-memory SQLite); never call real external APIs in tests (use `httptest` servers). Test DB failure paths with `testutil.FailOn`.
 - **Coverage:** aim for 100% of statements. `backend/scripts/coverage.sh` enforces the ratchet in `backend/.coverage-threshold`; raise it when coverage improves, never lower it. Make error paths testable (inject dependencies / package vars) rather than leaving them uncovered.
 - **Docs:** every change that adds or alters an endpoint, config variable, or workflow updates `docs/API.md`, `docs/DEVELOPMENT.md`, `backend/.env.example`, and this file in the same PR.

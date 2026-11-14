@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteMe, getMe, listMyProgress, listMyReviews, updateMe } from '../api/endpoints'
+import { deleteMe, getMe, listMyProgress, listMyReviews, setPassword, updateMe } from '../api/endpoints'
 import type { ProgressEntry, User, WatchStatus } from '../api/types'
 import Alert from '../components/Alert'
 import Avatar from '../components/Avatar'
@@ -64,6 +64,52 @@ function EditProfile({ user, onDone }: { user: User; onDone: () => void }) {
   )
 }
 
+function SetPassword({ user, onDone }: { user: User; onDone: () => void }) {
+  const qc = useQueryClient()
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const save = useMutation({
+    // A Google-only account has no current password to give; once one is set,
+    // changing it requires it.
+    mutationFn: () => setPassword(
+      user.has_password ? { current_password: current, new_password: next } : { new_password: next },
+    ),
+    onSuccess: () => {
+      qc.setQueryData(['me'], { ...user, has_password: true })
+      onDone()
+    },
+  })
+  const set = user.has_password !== true
+  return (
+    <form
+      className="cn-panel max-w-xl"
+      onSubmit={(e) => {
+        e.preventDefault()
+        save.mutate()
+      }}
+    >
+      <label className="cn-field">
+        Current password
+        <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" className="cn-input" />
+      </label>
+      <label className="cn-field">
+        New password
+        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" className="cn-input" />
+        <span className="t-body-s text-ink-muted">
+          {set ? 'At least 12 characters. You can then sign in without Google.' : 'At least 12 characters.'}
+        </span>
+      </label>
+      {save.isError && <Alert message={errorMessage(save.error)} />}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={next.length < 12 || save.isPending}>
+          {set ? 'Set password' : 'Change password'}
+        </Button>
+        <Button variant="quiet" onClick={onDone} disabled={save.isPending}>Cancel</Button>
+      </div>
+    </form>
+  )
+}
+
 function DeleteAccount({ user, onDone }: { user: User; onDone: () => void }) {
   const qc = useQueryClient()
   const [typed, setTyped] = useState('')
@@ -100,7 +146,7 @@ function DeleteAccount({ user, onDone }: { user: User; onDone: () => void }) {
 
 function Account() {
   const me = useQuery({ queryKey: ['me'], queryFn: getMe })
-  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
+  const [mode, setMode] = useState<'view' | 'edit' | 'password' | 'delete'>('view')
   if (me.isError) return <Alert message={errorMessage(me.error)} />
   if (!me.data) return <p className="t-body text-ink-muted">Loading…</p>
   const u = me.data
@@ -116,10 +162,14 @@ function Account() {
         </div>
       </header>
       {mode === 'edit' && <EditProfile user={u} onDone={done} />}
+      {mode === 'password' && <SetPassword user={u} onDone={done} />}
       {mode === 'delete' && <DeleteAccount user={u} onDone={done} />}
       {mode === 'view' && (
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => setMode('edit')}>Edit profile</Button>
+          <Button variant="secondary" onClick={() => setMode('password')}>
+            {u.has_password ? 'Change password' : 'Set a password'}
+          </Button>
           <Button variant="danger" onClick={() => setMode('delete')}>Delete account</Button>
         </div>
       )}

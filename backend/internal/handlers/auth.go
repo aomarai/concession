@@ -109,14 +109,10 @@ func (h *AuthHandler) HandleGoogleCallback(c *gin.Context) {
 	}
 
 	// 5. Issue a session
-	rawToken, err := auth.CreateSession(c.Request.Context(), h.DB, user.ID, c.Request.UserAgent(), c.Request.RemoteAddr)
-	if err != nil {
-		logger.Error("failed to create session", "error", err)
-		RespondError(c, http.StatusInternalServerError, "internal_error", "Authentication failed")
+	if !h.startSession(c, user) {
 		return
 	}
 
-	setSessionCookie(c, h.cfg, rawToken)
 	c.Redirect(http.StatusTemporaryRedirect, "/")
 }
 

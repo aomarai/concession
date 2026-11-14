@@ -256,6 +256,69 @@ describe('ProfilePage tracked titles', () => {
   })
 })
 
+describe('ProfilePage password', () => {
+  it('sets a password for a Google-only account', async () => {
+    vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', email: 'ada@example.com', display_name: 'Ada L', avatar_url: '', has_password: false })
+    vi.mocked(api.setPassword).mockResolvedValue(undefined)
+    renderWithProviders(<ProfilePage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Set a password' }))
+    await userEvent.type(screen.getByLabelText(/new password/i), 'correct horse battery')
+    await userEvent.click(screen.getByRole('button', { name: 'Set password' }))
+
+    expect(api.setPassword).toHaveBeenCalledWith({ new_password: 'correct horse battery' })
+    // Back to the account view, which now offers to change the password.
+    expect(await screen.findByRole('button', { name: 'Change password' })).toBeInTheDocument()
+  })
+
+  it('changes an existing password and requires the current one', async () => {
+    vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '', has_password: true })
+    vi.mocked(api.setPassword).mockResolvedValue(undefined)
+    renderWithProviders(<ProfilePage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change password' }))
+    await userEvent.type(screen.getByLabelText(/current password/i), 'correct horse battery')
+    await userEvent.type(screen.getByLabelText(/new password/i), 'another password 1')
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }))
+
+    expect(api.setPassword).toHaveBeenCalledWith({ current_password: 'correct horse battery', new_password: 'another password 1' })
+  })
+
+  it('keeps the button disabled until the new password is long enough', async () => {
+    vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '', has_password: false })
+    renderWithProviders(<ProfilePage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Set a password' }))
+    expect(screen.getByRole('button', { name: 'Set password' })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/new password/i), 'short')
+    expect(screen.getByRole('button', { name: 'Set password' })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/new password/i), ' enough now')
+    expect(screen.getByRole('button', { name: 'Set password' })).toBeEnabled()
+  })
+
+  it('shows a rejected password change', async () => {
+    vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '', has_password: true })
+    vi.mocked(api.setPassword).mockRejectedValue(new ApiError(400, 'bad_request', 'current password is incorrect'))
+    renderWithProviders(<ProfilePage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change password' }))
+    await userEvent.type(screen.getByLabelText(/current password/i), 'stale password')
+    await userEvent.type(screen.getByLabelText(/new password/i), 'another password 1')
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }))
+
+    expect(await screen.findByText(/current password is incorrect/i)).toBeInTheDocument()
+  })
+
+  it('can cancel the password change', async () => {
+    vi.mocked(api.getMe).mockResolvedValue({ id: 'u1', username: 'ada', display_name: 'Ada L', avatar_url: '', has_password: false })
+    renderWithProviders(<ProfilePage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Set a password' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('button', { name: 'Set a password' })).toBeInTheDocument()
+  })
+})
+
 describe('ProfilePage reviews', () => {
   it('lists your reviews', async () => {
     vi.mocked(api.listMyReviews).mockResolvedValue({

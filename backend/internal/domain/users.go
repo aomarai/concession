@@ -23,6 +23,14 @@ type User struct {
 	Role            UserRole   `json:"role" gorm:"type:varchar(20);default:'user';not null"`
 	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
 
+	// PasswordHash is the bcrypt hash of a local password, or "" for an account
+	// that only signs in through Google. Never serialized.
+	PasswordHash string `json:"-" gorm:"type:varchar(100)"`
+
+	// HasPassword is derived from PasswordHash on every load so the UI can offer
+	// "set a password" to Google-only accounts. Not stored.
+	HasPassword bool `json:"has_password" gorm:"-"`
+
 	// Profile metadata
 	DisplayName string `json:"display_name" gorm:"not null"`
 	AvatarURL   string `json:"avatar_url" gorm:"index"`
@@ -33,6 +41,13 @@ type User struct {
 	Collaborations []Collaborator      `json:"collaborations,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 	WatchProgress  []UserWatchProgress `json:"watch_progress,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 	OAuthAccounts  []OAuthAccount      `json:"oauth_accounts,omitempty"`
+}
+
+// AfterFind fills the derived HasPassword flag on every load, so no handler has
+// to remember to.
+func (u *User) AfterFind(*gorm.DB) error {
+	u.HasPassword = u.PasswordHash != ""
+	return nil
 }
 
 type WatchStatus string
